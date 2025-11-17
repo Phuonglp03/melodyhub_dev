@@ -1,0 +1,202 @@
+.otp-form {
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 0;
+  }
+  
+  /* OTP Input Styling */
+  .otp-input {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  
+  .otp-input .ant-input-otp-input {
+    width: 48px !important;
+    height: 56px !important;
+    font-size: 20px !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+    border-radius: 12px !important;
+    background: rgba(31, 31, 31, 0.7) !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+    transition: all 0.3s ease !important;
+  }
+  
+  .otp-input .ant-input-otp-input:hover {
+    border-color: rgba(139, 92, 246, 0.4) !important;
+    background: rgba(31, 31, 31, 0.85) !important;
+  }
+  
+  .otp-input .ant-input-otp-input:focus,
+  .otp-input .ant-input-otp-input-focused {
+    border-color: #8b5cf6 !important;
+    background: rgba(31, 31, 31, 0.95) !important;
+    box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15) !important;
+    transform: translateY(-2px);
+  }
+  
+  /* Verify Button */
+  .verify-button {
+    height: 52px !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    margin-top: 8px;
+  }
+  
+  /* Resend OTP Section */
+  .resend-otp {
+    text-align: center;
+    margin-top: 28px;
+    font-size: 14px;
+  }
+  
+  .resend-button {
+    padding: 0 !important;
+    height: auto !important;
+    line-height: 1 !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  .resend-button:hover:not(:disabled) {
+    color: #8b5cf6 !important;
+    text-decoration: underline;
+  }
+  
+  .resend-button:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.6;
+  }
+  
+  /* CRITICAL: Ant Design Message Notifications */
+  .ant-message {
+    z-index: 999999 !important;
+    position: fixed !important;
+    top: 24px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    pointer-events: none;
+    width: auto !important;
+  }
+  
+  .ant-message-notice {
+    pointer-events: all;
+    text-align: center;
+  }
+  
+  .ant-message-notice-content {
+    display: inline-flex !important;
+    align-items: center !important;
+    background: rgba(23, 23, 23, 0.98) !important;
+    backdrop-filter: blur(20px) !important;
+    border: 1px solid rgba(139, 92, 246, 0.4) !important;
+    border-radius: 12px !important;
+    padding: 14px 24px !important;
+    box-shadow: 
+      0 12px 32px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(139, 92, 246, 0.2) !important;
+    min-width: 300px;
+    animation: messageSlideIn 0.3s ease-out;
+  }
+  
+  @keyframes messageSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .ant-message-success .ant-message-notice-content {
+    border-color: rgba(52, 211, 153, 0.4) !important;
+    background: rgba(23, 23, 23, 0.98) !important;
+  }
+  
+  .ant-message-error .ant-message-notice-content {
+    border-color: rgba(248, 113, 113, 0.4) !important;
+    background: rgba(23, 23, 23, 0.98) !important;
+  }
+  
+  .ant-message-warning .ant-message-notice-content {
+    border-color: rgba(251, 191, 36, 0.4) !important;
+    background: rgba(23, 23, 23, 0.98) !important;
+  }
+  
+  .ant-message-success .anticon {
+    color: #34d399 !important;
+    font-size: 18px !important;
+    margin-right: 8px !important;
+  }
+  
+  .ant-message-error .anticon {
+    color: #f87171 !important;
+    font-size: 18px !important;
+    margin-right: 8px !important;
+  }
+  
+  .ant-message-warning .anticon {
+    color: #fbbf24 !important;
+    font-size: 18px !important;
+    margin-right: 8px !important;
+  }
+  
+  .ant-message-notice-content span {
+    color: #ffffff !important;
+    font-weight: 500 !important;
+    font-size: 15px !important;
+    line-height: 1.4 !important;
+  }
+  
+  /* Responsive styles */
+  @media (max-width: 768px) {
+    .otp-input {
+      gap: 10px;
+    }
+  
+    .otp-input .ant-input-otp-input {
+      width: 44px !important;
+      height: 52px !important;
+      font-size: 18px !important;
+    }
+  
+    .ant-message-notice-content {
+      min-width: 280px;
+      padding: 12px 20px !important;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .otp-input {
+      gap: 8px;
+    }
+  
+    .otp-input .ant-input-otp-input {
+      width: 40px !important;
+      height: 48px !important;
+      font-size: 16px !important;
+    }
+    
+    .verify-button {
+      height: 48px !important;
+      font-size: 15px !important;
+    }
+  
+    .resend-otp {
+      font-size: 13px;
+    }
+  
+    .ant-message-notice-content {
+      min-width: 260px;
+      padding: 12px 18px !important;
+    }
+  
+    .ant-message {
+      top: 16px !important;
+    }
+  }

@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark mode select dropdown */
+.dark-select-dropdown .ant-select-dropdown {
+  background: #0f0f10 !important;
+  border-color: #303030 !important;
+}
+
+.dark-select-dropdown .ant-select-item {
+  color: #e5e7eb !important;
+}
+
+.dark-select-dropdown .ant-select-item:hover {
+  background: #1f1f1f !important;
+}
+
+.dark-select-dropdown .ant-select-item-option-selected {
+  background: #2f2f2f !important;
+  color: #fff !important;
+}
+

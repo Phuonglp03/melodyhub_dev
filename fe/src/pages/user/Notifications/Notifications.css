@@ -1,0 +1,155 @@
+.notifications-page {
+  background: #0f0f0f;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.notifications-container {
+  max-width: 900px;
+  margin: 0 auto;
+  background: #1a1a1a;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.notifications-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.notifications-tabs {
+  margin-bottom: 24px;
+}
+
+.notifications-tabs .ant-tabs-tab {
+  color: #9ca3af;
+}
+
+.notifications-tabs .ant-tabs-tab-active {
+  color: #3b82f6;
+}
+
+.notifications-tabs .ant-tabs-ink-bar {
+  background: #3b82f6;
+}
+
+.notifications-content {
+  min-height: 400px;
+}
+
+.notifications-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notification-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: #111213;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.notification-card:hover {
+  background: #1a1a1a;
+  border-color: #3a3a3a;
+}
+
+.notification-card.unread {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.notification-card.unread::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #3b82f6;
+  border-radius: 8px 0 0 8px;
+}
+
+.notification-card-content {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-icon-large {
+  font-size: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 50%;
+}
+
+.notification-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.notification-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.notification-card-actions .ant-btn {
+  color: #9ca3af;
+}
+
+.notification-card-actions .ant-btn:hover {
+  color: #3b82f6;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .notifications-page {
+    padding: 12px;
+  }
+
+  .notifications-container {
+    padding: 16px;
+  }
+
+  .notification-card {
+    padding: 12px;
+  }
+
+  .notification-card-content {
+    gap: 12px;
+  }
+
+  .notification-icon-large {
+    width: 40px;
+    height: 40px;
+    font-size: 24px;
+  }
+}
+
+
+

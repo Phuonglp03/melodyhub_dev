@@ -1,0 +1,642 @@
+.register-container {
+  min-height: 100vh;
+  position: relative;
+  background: #0a0a0a;
+  overflow: hidden;
+}
+
+/* Enhanced Animated Background */
+.register-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse at 20% 30%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(59, 130, 246, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+  animation: backgroundShift 15s ease-in-out infinite;
+}
+
+@keyframes backgroundShift {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+}
+
+/* Enhanced Wave Pattern with Floating Particles */
+.wave-pattern {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(139, 92, 246, 0.04) 60px, rgba(139, 92, 246, 0.04) 61px),
+    repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(59, 130, 246, 0.04) 60px, rgba(59, 130, 246, 0.04) 61px);
+  animation: wave-animation 25s linear infinite;
+}
+
+.wave-pattern::before,
+.wave-pattern::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  animation: float 20s ease-in-out infinite;
+}
+
+.wave-pattern::before {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+  top: 20%;
+  left: 10%;
+  animation-delay: 0s;
+}
+
+.wave-pattern::after {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+  bottom: 10%;
+  right: 15%;
+  animation-delay: 5s;
+}
+
+@keyframes wave-animation {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(60px, 60px);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -30px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+}
+
+/* Header Styling */
+.register-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 3rem;
+  backdrop-filter: blur(10px);
+  background: rgba(10, 10, 10, 0.3);
+}
+
+.logo {
+  font-size: 1.75rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #3b82f6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+  animation: shimmer 3s ease-in-out infinite;
+  background-size: 200% 200%;
+}
+
+@keyframes shimmer {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.header-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.login-link {
+  color: #d1d5db;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.login-link:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.signup-btn {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: #ffffff;
+  padding: 0.625rem 1.75rem;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.signup-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.signup-btn:hover::before {
+  left: 100%;
+}
+
+.signup-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(139, 92, 246, 0.5);
+  color: #ffffff;
+}
+
+/* Register Content */
+.register-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: calc(100vh - 100px);
+  padding: 2rem;
+}
+
+/* Enhanced Register Card with Glassmorphism */
+.register-card {
+  background: rgba(23, 23, 23, 0.85);
+  backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  padding: 3rem;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 
+    0 25px 70px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(139, 92, 246, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  position: relative;
+  animation: cardAppear 0.6s ease-out;
+  overflow: hidden;
+}
+
+.register-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #8b5cf6, transparent);
+  animation: borderSlide 3s ease-in-out infinite;
+}
+
+@keyframes cardAppear {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes borderSlide {
+  0%, 100% {
+    left: -100%;
+  }
+  50% {
+    left: 100%;
+  }
+}
+
+.register-title {
+  color: #ffffff;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  text-align: center;
+  letter-spacing: -0.5px;
+}
+
+.register-subtitle {
+  color: #9ca3af;
+  font-size: 1rem;
+  margin-bottom: 2.5rem;
+  text-align: center;
+  font-weight: 400;
+}
+
+/* Form Label Styling */
+.form-label {
+  color: #e5e7eb;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* Enhanced Input Fields */
+.custom-input {
+  background: rgba(31, 31, 31, 0.7) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 12px !important;
+  color: #ffffff !important;
+  padding: 0.875rem 1.125rem !important;
+  font-size: 0.95rem !important;
+  transition: all 0.3s ease !important;
+  height: 52px !important;
+}
+
+.custom-input::placeholder {
+  color: #6b7280 !important;
+  font-weight: 400;
+}
+
+.custom-input:hover {
+  border-color: rgba(139, 92, 246, 0.4) !important;
+  background: rgba(31, 31, 31, 0.85) !important;
+}
+
+.custom-input:focus {
+  border-color: #8b5cf6 !important;
+  background: rgba(31, 31, 31, 0.95) !important;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15) !important;
+  transform: translateY(-1px);
+}
+
+/* Enhanced Password Input */
+.ant-input-password {
+  background: rgba(31, 31, 31, 0.7) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 12px !important;
+  height: 52px !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-input-password:hover {
+  border-color: rgba(139, 92, 246, 0.4) !important;
+}
+
+.ant-input-password:focus,
+.ant-input-password-focused {
+  border-color: #8b5cf6 !important;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15) !important;
+  transform: translateY(-1px);
+}
+
+.ant-input-password input {
+  background: transparent !important;
+  color: #ffffff !important;
+  font-size: 0.95rem !important;
+}
+
+.ant-input-password input::placeholder {
+  color: #6b7280 !important;
+}
+
+.ant-input-password-icon {
+  color: #9ca3af !important;
+  transition: color 0.2s !important;
+}
+
+.ant-input-password-icon:hover {
+  color: #8b5cf6 !important;
+}
+
+/* Birthday Inputs */
+.birthday-inputs {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.birthday-input {
+  flex: 1;
+  text-align: center;
+  height: 52px !important;
+}
+
+.year-input {
+  flex: 1.5;
+}
+
+/* Remove number input arrows */
+.birthday-input input[type="number"]::-webkit-inner-spin-button,
+.birthday-input input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.birthday-input input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Enhanced Signup Button */
+.signup-button {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
+  border: none !important;
+  border-radius: 12px !important;
+  height: 52px !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.3px !important;
+  margin-top: 0.5rem !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.signup-button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.signup-button:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+.signup-button:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 0 10px 30px rgba(139, 92, 246, 0.6) !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
+}
+
+.signup-button:active {
+  transform: translateY(-1px) !important;
+}
+
+.signup-button span {
+  position: relative;
+  z-index: 1;
+}
+
+/* Login Footer */
+.login-footer {
+  text-align: center;
+  margin-top: 2rem;
+  color: #9ca3af;
+  font-size: 0.95rem;
+}
+
+.login-footer-link {
+  color: #a78bfa;
+  text-decoration: none;
+  font-weight: 600;
+  margin-left: 0.25rem;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.login-footer-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1.5px;
+  background: #8b5cf6;
+  transition: width 0.3s ease;
+}
+
+.login-footer-link:hover {
+  color: #8b5cf6;
+}
+
+.login-footer-link:hover::after {
+  width: 100%;
+}
+
+/* Ant Design Form Override */
+.ant-form-item {
+  margin-bottom: 1.5rem;
+}
+
+.ant-form-item-label > label {
+  color: #e5e7eb !important;
+  font-weight: 600 !important;
+}
+
+.ant-form-item-explain-error {
+  color: #f87171 !important;
+  font-size: 0.85rem !important;
+  margin-top: 0.5rem !important;
+}
+
+/* Loading Spinner */
+.ant-btn-loading-icon {
+  color: #ffffff !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .register-header {
+    padding: 1rem 1.5rem;
+  }
+
+  .logo {
+    font-size: 1.5rem;
+  }
+
+  .register-card {
+    padding: 2rem 1.75rem;
+    max-width: 100%;
+  }
+
+  .register-title {
+    font-size: 1.75rem;
+  }
+
+  .register-subtitle {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .register-header {
+    padding: 1rem;
+  }
+
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  .signup-btn {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.875rem;
+  }
+
+  .register-card {
+    padding: 1.75rem 1.25rem;
+  }
+
+  .register-title {
+    font-size: 1.5rem;
+  }
+
+  .birthday-inputs {
+    gap: 0.5rem;
+  }
+}
+
+/* Add subtle animation to form items */
+.ant-form-item {
+  animation: fadeInUp 0.5s ease-out backwards;
+}
+
+.ant-form-item:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.ant-form-item:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.ant-form-item:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.ant-form-item:nth-child(4) {
+  animation-delay: 0.4s;
+}
+
+.ant-form-item:nth-child(5) {
+  animation-delay: 0.5s;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* CRITICAL: Ant Design Message Notifications - Fixed Positioning */
+.ant-message {
+  z-index: 999999 !important;
+  position: fixed !important;
+  top: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  pointer-events: none;
+  width: auto !important;
+}
+
+.ant-message-notice {
+  pointer-events: all;
+  text-align: center;
+}
+
+.ant-message-notice-content {
+  display: inline-flex !important;
+  align-items: center !important;
+  background: rgba(23, 23, 23, 0.98) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  border-radius: 12px !important;
+  padding: 14px 24px !important;
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(139, 92, 246, 0.2) !important;
+  min-width: 300px;
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ant-message-success .ant-message-notice-content {
+  border-color: rgba(52, 211, 153, 0.4) !important;
+  background: rgba(23, 23, 23, 0.98) !important;
+}
+
+.ant-message-error .ant-message-notice-content {
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  background: rgba(23, 23, 23, 0.98) !important;
+}
+
+.ant-message-success .anticon {
+  color: #34d399 !important;
+  font-size: 18px !important;
+  margin-right: 8px !important;
+}
+
+.ant-message-error .anticon {
+  color: #f87171 !important;
+  font-size: 18px !important;
+  margin-right: 8px !important;
+}
+
+.ant-message-notice-content span {
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  font-size: 15px !important;
+  line-height: 1.4 !important;
+}
+
+/* Responsive for messages */
+@media (max-width: 768px) {
+  .ant-message-notice-content {
+    min-width: 280px;
+    padding: 12px 20px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .ant-message-notice-content {
+    min-width: 260px;
+    padding: 12px 18px !important;
+  }
+
+  .ant-message {
+    top: 16px !important;
+  }
+}
