@@ -493,7 +493,7 @@ const LiveStreamCreate = () => {
                   <input 
                     type="text"
                     readOnly 
-                    value={room.rtmpUrl || 'rtmp://34.96.147.17:1935/live'}
+                    value={room.rtmpUrl }
                     style={{ 
                       flex: 1,
                       padding: '8px 12px',
