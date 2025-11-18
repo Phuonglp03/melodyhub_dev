@@ -506,7 +506,7 @@ const LiveStreamCreate = () => {
                   />
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(room.rtmpUrl || 'rtmp://34.96.147.17:1935/live');
+                      navigator.clipboard.writeText(room.rtmpUrl || 'rtmp://api.melodyhub.online:1935/live');
                       setCopiedField('rtmp');
                       setTimeout(() => setCopiedField(''), 2000);
                     }}
