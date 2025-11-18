@@ -29,8 +29,8 @@ export const login = async (email, password) => {
         }
       };
       
-      // Lưu vào localStorage (dành cho backward compatibility với code cũ)
-      // Redux persist cũng sẽ tự động lưu vào persist:auth
+      // Note: Redux persist will automatically save to localStorage
+      // Legacy localStorage is kept for backward compatibility only
       localStorage.setItem('user', JSON.stringify(userData));
       
       return { 
@@ -102,8 +102,8 @@ export const register = async (userData) => {
         }
       };
       
-      // Lưu vào localStorage (backward compatibility)
-      // Redux persist cũng sẽ tự động lưu vào persist:auth
+      // Note: Redux persist will automatically save to localStorage
+      // Legacy localStorage is kept for backward compatibility only
       localStorage.setItem('user', JSON.stringify(userDataToStore));
       
       return {
@@ -159,8 +159,8 @@ export const verifyEmail = async (email, otp) => {
         }
       };
       
-      // Lưu vào localStorage (backward compatibility)
-      // Redux persist cũng sẽ tự động lưu vào persist:auth
+      // Note: Redux persist will automatically save to localStorage
+      // Legacy localStorage is kept for backward compatibility only
       localStorage.setItem('user', JSON.stringify(userData));
       
       return { 
@@ -235,20 +235,41 @@ export const loginWithGoogle = async (token) => {
 };
 
 // Lấy thông tin user hiện tại
+// Note: Prefer using Redux store directly in components
+// This is kept for backward compatibility
 export const getCurrentUser = () => {
-  const user = localStorage.getItem('user');
-  return user ? JSON.parse(user) : null;
+  // Try Redux persist first
+  try {
+    const persistAuth = localStorage.getItem('persist:auth');
+    if (persistAuth) {
+      const parsed = JSON.parse(persistAuth);
+      const user = parsed.user ? JSON.parse(parsed.user) : null;
+      return user;
+    }
+  } catch (e) {
+    console.error('Error reading from Redux persist:', e);
+  }
+  
+  // Fallback to legacy localStorage (for backward compatibility)
+  try {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  } catch (e) {
+    return null;
+  }
 };
 
 // Kiểm tra xem người dùng đã đăng nhập chưa
 export const isAuthenticated = () => {
-  return !!getCurrentUser();
+  const user = getCurrentUser();
+  return !!(user?.token || user?.user?.id);
 };
 
 // Kiểm tra xem người dùng có phải là admin không
 export const isAdmin = () => {
   const user = getCurrentUser();
-  return user?.roleId === 'admin';
+  const roleId = user?.user?.roleId || user?.roleId;
+  return roleId === 'admin';
 };
 
 // Refresh access token (for compatibility, but api.js handles this automatically)
@@ -271,8 +292,8 @@ export const refreshAccessToken = async () => {
       }
     };
     
-    // Lưu vào localStorage (backward compatibility)
-    // api.js cũng sẽ dispatch updateTokens action để update Redux
+    // Note: api.js will dispatch updateTokens action to update Redux
+    // Legacy localStorage is kept for backward compatibility only
     localStorage.setItem('user', JSON.stringify(userData));
     
     return token;

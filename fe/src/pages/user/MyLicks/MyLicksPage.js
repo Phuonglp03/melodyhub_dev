@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaSearch, FaPlus, FaFilter, FaLock, FaTimes } from "react-icons/fa";
-import http from "../../../services/http";
+import api from "../../../services/api";
 import {
   deleteLick,
   updateLick as apiUpdateLick,
@@ -83,7 +83,7 @@ const MyLicksPage = () => {
         params.status = statusFilter;
       }
 
-      const res = await http.get(`/licks/user/me`, { params });
+      const res = await api.get(`/licks/user/me`, { params });
 
       if (res.data.success) {
         setLicks(res.data.data);

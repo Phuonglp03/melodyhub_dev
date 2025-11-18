@@ -37,6 +37,7 @@ const LiveStreamCreate = () => {
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [descriptionText, setDescriptionText] = useState('');
+  const [copiedField, setCopiedField] = useState(''); // 'rtmp', 'key', or ''
   
   // Video.js refs
   const videoRef = useRef(null);
@@ -476,9 +477,10 @@ const LiveStreamCreate = () => {
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }}>
-                Sao chép và dán khóa luồng này vào phần mềm phát trực tiếp bạn đang sử dụng.
+                Sao chép và dán URL máy chủ và khóa luồng vào phần mềm phát trực tiếp (OBS, Streamlabs...).
               </div>
               
+              {/* RTMP Server URL */}
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ 
                   fontSize: '13px',
@@ -486,7 +488,55 @@ const LiveStreamCreate = () => {
                   color: '#e4e6eb',
                   display: 'block',
                   marginBottom: '8px'
-                }}>Khóa luồng</label>
+                }}>URL máy chủ (RTMP)</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type="text"
+                    readOnly 
+                    value={room.rtmpUrl || 'rtmp://34.96.147.17:1935/live'}
+                    style={{ 
+                      flex: 1,
+                      padding: '8px 12px',
+                      background: '#3a3b3c',
+                      border: '1px solid #4a4b4c',
+                      borderRadius: '6px',
+                      color: '#e4e6eb',
+                      fontSize: '13px'
+                    }} 
+                  />
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(room.rtmpUrl || 'rtmp://34.96.147.17:1935/live');
+                      setCopiedField('rtmp');
+                      setTimeout(() => setCopiedField(''), 2000);
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      background: copiedField === 'rtmp' ? '#10b981' : '#0084ff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'background 0.2s'
+                    }}
+                  >
+                    {copiedField === 'rtmp' ? '✓ Đã sao' : 'Sao chép'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Stream Key */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ 
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  color: '#e4e6eb',
+                  display: 'block',
+                  marginBottom: '8px'
+                }}>Khóa luồng (Stream Key)</label>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <div style={{ 
                     flex: 1,
@@ -527,26 +577,59 @@ const LiveStreamCreate = () => {
                     </button>
                   </div>
                   <button 
-                    onClick={() => navigator.clipboard.writeText(room.streamKey)}
+                    onClick={() => {
+                      navigator.clipboard.writeText(room.streamKey);
+                      setCopiedField('key');
+                      setTimeout(() => setCopiedField(''), 2000);
+                    }}
                     style={{
                       padding: '8px 16px',
-                      background: '#0084ff',
+                      background: copiedField === 'key' ? '#10b981' : '#0084ff',
                       border: 'none',
                       borderRadius: '6px',
                       color: 'white',
                       fontSize: '13px',
                       fontWeight: '600',
                       cursor: 'pointer',
-                      whiteSpace: 'nowrap'
+                      whiteSpace: 'nowrap',
+                      transition: 'background 0.2s'
                     }}
                   >
-                    Sao chép
+                    {copiedField === 'key' ? '✓ Đã sao' : 'Sao chép'}
                   </button>
                 </div>
               </div>
               
-              <div style={{ fontSize: '12px', color: '#b0b3b8', marginTop: '12px' }}>
-                Nhấn không nên chia sẻ khóa này với bất kỳ ai khi chưa bạn muốn cản khác hành xâm nhập vào phát trực tiếp. <a href="#" style={{ color: '#0084ff' }}>Sao thế hơn nếu cần thiết.</a>
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#b0b3b8', 
+                marginTop: '12px',
+                padding: '12px',
+                background: '#3a3b3c',
+                borderRadius: '6px',
+                borderLeft: '3px solid #ff6b6b'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '6px', color: '#ff6b6b' }}>⚠️ Bảo mật quan trọng:</div>
+                <div>Không nên chia sẻ URL máy chủ và khóa luồng với bất kỳ ai để tránh người khác xâm nhập vào phát trực tiếp của bạn.</div>
+              </div>
+
+              {/* OBS Setup Instructions */}
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#b0b3b8', 
+                marginTop: '16px',
+                padding: '12px',
+                background: '#18191a',
+                borderRadius: '6px'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '8px', color: '#0084ff' }}>📋 Hướng dẫn cấu hình OBS Studio:</div>
+                <ol style={{ margin: '0', paddingLeft: '20px', lineHeight: '1.6' }}>
+                  <li>Mở OBS Studio → Settings → Stream</li>
+                  <li>Service: chọn "Custom..."</li>
+                  <li>Server: dán <strong>URL máy chủ</strong> ở trên</li>
+                  <li>Stream Key: dán <strong>Khóa luồng</strong> ở trên</li>
+                  <li>Nhấn OK → Start Streaming</li>
+                </ol>
               </div>
             </div>
           </div>

@@ -1,9 +1,9 @@
-import http from "../http.js";
+import api from "../api";
 
 // Create a new project
 export const createProject = async (projectData) => {
   try {
-    const res = await http.post("/projects", projectData);
+    const res = await api.post("/projects", projectData);
     return res.data;
   } catch (error) {
     console.error("Error creating project:", error);
@@ -14,7 +14,7 @@ export const createProject = async (projectData) => {
 // Get all projects for the current user
 export const getUserProjects = async (filter = "all") => {
   try {
-    const res = await http.get("/projects", {
+    const res = await api.get("/projects", {
       params: { filter },
     });
     return res.data;
@@ -27,7 +27,7 @@ export const getUserProjects = async (filter = "all") => {
 // Get project by ID with full details
 export const getProjectById = async (projectId) => {
   try {
-    const res = await http.get(`/projects/${projectId}`);
+    const res = await api.get(`/projects/${projectId}`);
     return res.data;
   } catch (error) {
     console.error("Error fetching project:", error);
@@ -38,7 +38,7 @@ export const getProjectById = async (projectId) => {
 // Update project
 export const updateProject = async (projectId, projectData) => {
   try {
-    const res = await http.put(`/projects/${projectId}`, projectData);
+    const res = await api.put(`/projects/${projectId}`, projectData);
     return res.data;
   } catch (error) {
     console.error("Error updating project:", error);
@@ -49,7 +49,7 @@ export const updateProject = async (projectId, projectData) => {
 // Delete project
 export const deleteProject = async (projectId) => {
   try {
-    const res = await http.delete(`/projects/${projectId}`);
+    const res = await api.delete(`/projects/${projectId}`);
     return res.data;
   } catch (error) {
     console.error("Error deleting project:", error);
@@ -60,7 +60,7 @@ export const deleteProject = async (projectId) => {
 // Add lick to timeline
 export const addLickToTimeline = async (projectId, timelineData) => {
   try {
-    const res = await http.post(
+    const res = await api.post(
       `/projects/${projectId}/timeline/items`,
       timelineData
     );
@@ -74,7 +74,7 @@ export const addLickToTimeline = async (projectId, timelineData) => {
 // Update timeline item
 export const updateTimelineItem = async (projectId, itemId, updateData) => {
   try {
-    const res = await http.put(
+    const res = await api.put(
       `/projects/${projectId}/timeline/items/${itemId}`,
       updateData
     );
@@ -88,7 +88,7 @@ export const updateTimelineItem = async (projectId, itemId, updateData) => {
 // Delete timeline item
 export const deleteTimelineItem = async (projectId, itemId) => {
   try {
-    const res = await http.delete(
+    const res = await api.delete(
       `/projects/${projectId}/timeline/items/${itemId}`
     );
     return res.data;
@@ -101,7 +101,7 @@ export const deleteTimelineItem = async (projectId, itemId) => {
 // Update chord progression
 export const updateChordProgression = async (projectId, chordProgression) => {
   try {
-    const res = await http.put(`/projects/${projectId}/chords`, {
+    const res = await api.put(`/projects/${projectId}/chords`, {
       chordProgression,
     });
     return res.data;
@@ -114,7 +114,7 @@ export const updateChordProgression = async (projectId, chordProgression) => {
 // Add track to project
 export const addTrack = async (projectId, trackData) => {
   try {
-    const res = await http.post(`/projects/${projectId}/tracks`, trackData);
+    const res = await api.post(`/projects/${projectId}/tracks`, trackData);
     return res.data;
   } catch (error) {
     console.error("Error adding track:", error);
@@ -125,7 +125,7 @@ export const addTrack = async (projectId, trackData) => {
 // Update track
 export const updateTrack = async (projectId, trackId, trackData) => {
   try {
-    const res = await http.put(
+    const res = await api.put(
       `/projects/${projectId}/tracks/${trackId}`,
       trackData
     );
@@ -139,7 +139,7 @@ export const updateTrack = async (projectId, trackId, trackData) => {
 // Delete track
 export const deleteTrack = async (projectId, trackId) => {
   try {
-    const res = await http.delete(`/projects/${projectId}/tracks/${trackId}`);
+    const res = await api.delete(`/projects/${projectId}/tracks/${trackId}`);
     return res.data;
   } catch (error) {
     console.error("Error deleting track:", error);
@@ -150,7 +150,7 @@ export const deleteTrack = async (projectId, trackId) => {
 // Get available instruments
 export const getInstruments = async () => {
   try {
-    const res = await http.get("/projects/instruments");
+    const res = await api.get("/projects/instruments");
     return res.data;
   } catch (error) {
     console.error("Error fetching instruments:", error);

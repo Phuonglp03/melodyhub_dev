@@ -20,7 +20,7 @@ import {
 } from "../../../services/user/playlistService";
 import { getCommunityLicks } from "../../../services/user/lickService";
 import LickCard from "../../../components/LickCard";
-import http from "../../../services/http";
+import api from "../../../services/api";
 import { useSelector } from "react-redux";
 
 const PlaylistDetailPage = () => {
@@ -70,7 +70,7 @@ const PlaylistDetailPage = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await http.get(`/playlists/${playlistId}`);
+      const res = await api.get(`/playlists/${playlistId}`);
       if (res.data.success) {
         setPlaylist(res.data.data);
       } else {

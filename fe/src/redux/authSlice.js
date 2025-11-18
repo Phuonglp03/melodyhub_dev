@@ -151,26 +151,28 @@ const authSlice = createSlice({
         state.isSuccess = true;
         
         // Log để debug
-        console.log('Registration payload:', action.payload);
+        console.log('[authSlice] Registration payload:', action.payload);
         
-        // Xử lý dữ liệu trả về từ đăng ký
-        if (action.payload.token) {
-          // Nếu có token, lưu thông tin user vào state
-          state.user = {
-            ...(action.payload.user || {
-              id: action.payload.id,
-              email: action.payload.email,
-              username: action.payload.username,
-              displayName: action.payload.displayName,
-              verifiedEmail: action.payload.verifiedEmail,
-              roleId: action.payload.roleId
-            }),
-            token: action.payload.token,
-            refreshToken: action.payload.refreshToken
-          };
-        } else {
-          // Nếu không có token, vẫn lưu thông tin user nếu có
-          state.user = action.payload.user || action.payload;
+        // Check if registration requires verification
+        if (action.payload?.requiresVerification) {
+          state.requiresVerification = true;
+          state.verificationEmail = action.payload.email;
+          state.message = action.payload.message || 'Đăng ký thành công. Vui lòng xác thực email.';
+          return; // Don't set user if verification required
+        }
+        
+        // If registration includes auto-login (has token)
+        if (action.payload?.data?.token) {
+          state.user = action.payload.data;
+          console.log('[authSlice] Registration with auto-login successful:', {
+            hasToken: !!action.payload.data.token,
+            hasRefreshToken: !!action.payload.data.refreshToken,
+            userId: action.payload.data.user?.id
+          });
+        } else if (action.payload?.token) {
+          // Direct token in payload
+          state.user = action.payload;
+          console.log('[authSlice] Registration successful with token');
         }
         
         state.message = action.payload.message || 'Đăng ký thành công';
@@ -190,7 +192,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.isError = false;
-        state.message = action.payload?.message || 'Đăng nhập thành công';
+        state.message = 'Đăng nhập thành công';
         
         // Handle email verification required
         if (action.payload?.requiresVerification) {
@@ -199,18 +201,18 @@ const authSlice = createSlice({
           return; // Don't set user if verification required
         }
         
-        // ✅ Save full data object including token & refreshToken
-        if (action.payload?.data) {
-          // authService returns { success, data: { token, refreshToken, user }, message }
-          state.user = action.payload.data;
+        // ✅ action.payload is already { token, refreshToken, user }
+        // because login thunk returns response.data (see line 54)
+        if (action.payload?.token) {
+          state.user = action.payload;
           console.log('[authSlice] Login successful, user data saved:', {
-            hasToken: !!action.payload.data.token,
-            hasRefreshToken: !!action.payload.data.refreshToken,
-            userId: action.payload.data.user?.id
+            hasToken: !!action.payload.token,
+            hasRefreshToken: !!action.payload.refreshToken,
+            userId: action.payload.user?.id,
+            tokenPreview: action.payload.token?.substring(0, 30) + '...'
           });
-        } else if (action.payload?.user) {
-          // Fallback for other response formats
-          state.user = action.payload.user;
+        } else {
+          console.error('[authSlice] Login payload missing token:', action.payload);
         }
       })
       .addCase(login.rejected, (state, action) => {

@@ -1,11 +1,4 @@
-import { API_CONFIG } from "../../config/api";
-import http from "../../services/http";
-
-const API_BASE_URL = API_CONFIG.API_BASE_URL;
-const API_BASE = (() => {
-  const t = (API_BASE_URL || "").replace(/\/$/, "");
-  return t.endsWith("/api") ? t : `${t}/api`;
-})();
+import api from "../api";
 
 // Get community playlists (public playlists)
 export const getCommunityPlaylists = async (params = {}) => {
@@ -17,26 +10,15 @@ export const getCommunityPlaylists = async (params = {}) => {
       limit = 20,
     } = params;
 
-    const queryParams = new URLSearchParams({
-      page: page.toString(),
-      limit: limit.toString(),
+    const queryParams = {
+      page,
+      limit,
       sortBy,
-    });
+    };
 
-    if (search) queryParams.append("search", search);
+    if (search) queryParams.search = search;
 
-    const response = await fetch(`${API_BASE}/playlists/community?${queryParams}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
+    const { data } = await api.get('/playlists/community', { params: queryParams });
     return data;
   } catch (error) {
     console.error("Error fetching community playlists:", error);
@@ -54,15 +36,15 @@ export const getMyPlaylists = async (params = {}) => {
       limit = 20,
     } = params;
 
-    const queryParams = new URLSearchParams({
-      page: page.toString(),
-      limit: limit.toString(),
-    });
+    const queryParams = {
+      page,
+      limit,
+    };
 
-    if (search) queryParams.append("search", search);
-    if (isPublic !== undefined) queryParams.append("isPublic", isPublic.toString());
+    if (search) queryParams.search = search;
+    if (isPublic !== undefined) queryParams.isPublic = isPublic;
 
-    const res = await http.get(`/playlists/me?${queryParams}`);
+    const res = await api.get('/playlists/me', { params: queryParams });
     return res.data;
   } catch (error) {
     console.error("Error fetching playlists:", error);
@@ -73,7 +55,7 @@ export const getMyPlaylists = async (params = {}) => {
 // Get playlist by ID with all licks
 export const getPlaylistById = async (playlistId) => {
   try {
-    const res = await http.get(`/playlists/${playlistId}`);
+    const res = await api.get(`/playlists/${playlistId}`);
     return res.data;
   } catch (error) {
     console.error("Error fetching playlist:", error);
@@ -84,7 +66,7 @@ export const getPlaylistById = async (playlistId) => {
 // Create a new playlist
 export const createPlaylist = async (playlistData) => {
   try {
-    const res = await http.post("/playlists", playlistData);
+    const res = await api.post("/playlists", playlistData);
     return res.data;
   } catch (error) {
     console.error("Error creating playlist:", error);
@@ -95,7 +77,7 @@ export const createPlaylist = async (playlistData) => {
 // Update playlist
 export const updatePlaylist = async (playlistId, playlistData) => {
   try {
-    const res = await http.put(`/playlists/${playlistId}`, playlistData);
+    const res = await api.put(`/playlists/${playlistId}`, playlistData);
     return res.data;
   } catch (error) {
     console.error("Error updating playlist:", error);
@@ -106,7 +88,7 @@ export const updatePlaylist = async (playlistId, playlistData) => {
 // Delete playlist
 export const deletePlaylist = async (playlistId) => {
   try {
-    const res = await http.delete(`/playlists/${playlistId}`);
+    const res = await api.delete(`/playlists/${playlistId}`);
     return res.data;
   } catch (error) {
     console.error("Error deleting playlist:", error);
@@ -117,7 +99,7 @@ export const deletePlaylist = async (playlistId) => {
 // Add lick to playlist
 export const addLickToPlaylist = async (playlistId, lickId) => {
   try {
-    const res = await http.post(`/playlists/${playlistId}/licks/${lickId}`);
+    const res = await api.post(`/playlists/${playlistId}/licks/${lickId}`);
     return res.data;
   } catch (error) {
     console.error("Error adding lick to playlist:", error);
@@ -128,7 +110,7 @@ export const addLickToPlaylist = async (playlistId, lickId) => {
 // Remove lick from playlist
 export const removeLickFromPlaylist = async (playlistId, lickId) => {
   try {
-    const res = await http.delete(`/playlists/${playlistId}/licks/${lickId}`);
+    const res = await api.delete(`/playlists/${playlistId}/licks/${lickId}`);
     return res.data;
   } catch (error) {
     console.error("Error removing lick from playlist:", error);
@@ -139,11 +121,10 @@ export const removeLickFromPlaylist = async (playlistId, lickId) => {
 // Reorder licks in playlist
 export const reorderPlaylistLicks = async (playlistId, lickIds) => {
   try {
-    const res = await http.put(`/playlists/${playlistId}/reorder`, { lickIds });
+    const res = await api.put(`/playlists/${playlistId}/reorder`, { lickIds });
     return res.data;
   } catch (error) {
     console.error("Error reordering playlist licks:", error);
     throw error;
   }
 };
-

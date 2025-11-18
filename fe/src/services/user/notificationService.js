@@ -1,4 +1,4 @@
-import http from '../http';
+import api from '../api';
 
 /**
  * Lấy danh sách thông báo
@@ -9,7 +9,7 @@ export const getNotifications = async ({ page = 1, limit = 20, isRead } = {}) =>
   if (isRead !== undefined) {
     params.isRead = isRead;
   }
-  const { data } = await http.get('/notifications', { params });
+  const { data } = await api.get('/notifications', { params });
   return data;
 };
 
@@ -17,7 +17,7 @@ export const getNotifications = async ({ page = 1, limit = 20, isRead } = {}) =>
  * Lấy số lượng thông báo chưa đọc
  */
 export const getUnreadNotificationCount = async () => {
-  const { data } = await http.get('/notifications/unread/count');
+  const { data } = await api.get('/notifications/unread/count');
   return data;
 };
 
@@ -26,7 +26,7 @@ export const getUnreadNotificationCount = async () => {
  * @param {string} notificationId
  */
 export const markNotificationAsRead = async (notificationId) => {
-  const { data } = await http.put(`/notifications/${notificationId}/read`);
+  const { data } = await api.put(`/notifications/${notificationId}/read`);
   return data;
 };
 
@@ -34,7 +34,7 @@ export const markNotificationAsRead = async (notificationId) => {
  * Đánh dấu tất cả thông báo là đã đọc
  */
 export const markAllNotificationsAsRead = async () => {
-  const { data } = await http.put('/notifications/read-all');
+  const { data } = await api.put('/notifications/read-all');
   return data;
 };
 
@@ -43,9 +43,6 @@ export const markAllNotificationsAsRead = async () => {
  * @param {string} notificationId
  */
 export const deleteNotification = async (notificationId) => {
-  const { data } = await http.delete(`/notifications/${notificationId}`);
+  const { data } = await api.delete(`/notifications/${notificationId}`);
   return data;
 };
-
-
-

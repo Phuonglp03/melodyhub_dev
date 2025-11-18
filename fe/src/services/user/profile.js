@@ -1,39 +1,22 @@
-import http from '../http';
-
-const getToken = () => {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    return localStorage.getItem('token') || undefined;
-  } catch {
-    return undefined;
-  }
-};
+import api from '../api';
 
 export const getMyProfile = async () => {
-  const token = getToken();
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const { data } = await http.get('/users/profile', { headers });
+  const { data } = await api.get('/users/profile');
   return data;
 };
 
 export const getProfileById = async (userId) => {
   if (!userId) throw new Error('userId is required');
-  const { data } = await http.get(`/users/${userId}`);
+  const { data } = await api.get(`/users/${userId}`);
   return data;
 };
 
 export const updateMyProfile = async (payload) => {
-  const token = getToken();
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const { data } = await http.put('/users/profile', payload, { headers });
+  const { data } = await api.put('/users/profile', payload);
   return data;
 };
 
 export const uploadMyAvatar = async (file) => {
-  const token = getToken();
-  // Với FormData, KHÔNG set Content-Type - browser sẽ tự set với boundary
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  
   // Antd Upload có thể trả về file wrapper, lấy originFileObj nếu có
   const fileToUpload = file?.originFileObj || file;
   
@@ -64,20 +47,13 @@ export const uploadMyAvatar = async (file) => {
     type: fileToUpload.type
   });
   
-  const { data } = await http.post('/users/profile/avatar', form, { 
-    headers,
-    // Không set Content-Type để browser tự động set multipart boundary
-  });
+  const { data } = await api.post('/users/profile/avatar', form);
   
   console.log('[Upload Avatar] Response:', data);
   return data;
 };
 
 export const uploadMyCoverPhoto = async (file) => {
-  const token = getToken();
-  // Với FormData, KHÔNG set Content-Type - browser sẽ tự set với boundary
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  
   // Antd Upload có thể trả về file wrapper, lấy originFileObj nếu có
   const fileToUpload = file?.originFileObj || file;
   
@@ -106,10 +82,7 @@ export const uploadMyCoverPhoto = async (file) => {
     type: fileToUpload.type
   });
   
-  const { data } = await http.post('/users/profile/cover-photo', form, { 
-    headers,
-    // Không set Content-Type để browser tự động set multipart boundary
-  });
+  const { data } = await api.post('/users/profile/cover-photo', form);
   
   console.log('[Upload Cover Photo] Response:', data);
   return data;
@@ -117,23 +90,23 @@ export const uploadMyCoverPhoto = async (file) => {
 
 export const followUser = async (userId) => {
   if (!userId) throw new Error('userId is required');
-  const { data } = await http.post(`/users/${userId}/follow`);
+  const { data } = await api.post(`/users/${userId}/follow`);
   return data;
 };
 
 export const unfollowUser = async (userId) => {
   if (!userId) throw new Error('userId is required');
-  const { data } = await http.delete(`/users/${userId}/follow`);
+  const { data } = await api.delete(`/users/${userId}/follow`);
   return data;
 };
 
 export const getFollowSuggestions = async (limit = 5) => {
-  const { data } = await http.get(`/users/suggestions/list`, { params: { limit } });
+  const { data } = await api.get(`/users/suggestions/list`, { params: { limit } });
   return data;
 };
 
 export const getFollowingList = async (search = '', limit = 50) => {
-  const { data } = await http.get(`/users/following`, { params: { search, limit } });
+  const { data } = await api.get(`/users/following`, { params: { search, limit } });
   return data;
 };
 

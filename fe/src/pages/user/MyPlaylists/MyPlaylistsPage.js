@@ -6,7 +6,7 @@ import {
   deletePlaylist,
 } from "../../../services/user/playlistService";
 import CreatePlaylistModal from "../../../components/CreatePlaylistModal";
-import http from "../../../services/http";
+import api from "../../../services/api";
 
 const MyPlaylistsPage = () => {
   const navigate = useNavigate();
@@ -34,7 +34,7 @@ const MyPlaylistsPage = () => {
       if (searchTerm) params.search = searchTerm;
       if (filterPublic !== "") params.isPublic = filterPublic === "true";
 
-      const res = await http.get("/playlists/me", { params });
+      const res = await api.get("/playlists/me", { params });
 
       if (res.data.success) {
         setPlaylists(res.data.data);

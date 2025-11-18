@@ -73,9 +73,10 @@ export const getLiveStreamById = async (req, res) => {
     }
 
     const playbackBaseUrl = process.env.MEDIA_SERVER_HTTP_URL || 'http://localhost:8000';
-
+    const currentVmIp = process.env.CURRENT_VM_PUBLIC_IP || 'localhost';
     res.status(200).json({
       ...stream.toObject(),
+      rtmpUrl: `rtmp://${currentVmIp}:1935/live`,
       playbackUrls: {
         hls: `${playbackBaseUrl}/live/${stream.streamKey}/index.m3u8`,
         flv: `${playbackBaseUrl}/live/${stream.streamKey}.flv`
