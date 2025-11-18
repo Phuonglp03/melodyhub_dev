@@ -4,26 +4,21 @@ import jwt from 'jsonwebtoken';
 import sendMail from './sendMail.js';
 import { validationResult } from 'express-validator';
 import crypto from 'crypto';
+import { createAccessToken, createRefreshToken } from '../utils/jwt.js';
 
 // Generate access and refresh tokens
 export const generateTokens = async (user) => {
-  // Generate access token (15 minutes)
-  const accessToken = jwt.sign(
-    {
-      userId: user._id,
-      email: user.email,
-      roleId: user.roleId
-    },
-    process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '1h' }
-  );
 
-  // Generate refresh token (7 days)
-  const refreshToken = jwt.sign(
-    { userId: user._id },
-    process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '7d' }
-  );
+  const accessToken = createAccessToken({
+    userId: user._id,
+    email: user.email,
+    roleId: user.roleId
+  });
+
+
+  const refreshToken = createRefreshToken({
+    userId: user._id
+  });
 
   // Save refresh token to user
   user.refreshToken = refreshToken;
@@ -154,24 +149,38 @@ export const refreshToken = async (req, res) => {
     }
 
     // Xác thực refresh token
-    jwt.verify(refreshToken, process.env.JWT_SECRET || 'your-secret-key', (err, decoded) => {
+    jwt.verify(refreshToken, process.env.JWT_SECRET || 'your-secret-key', async (err, decoded) => {
       if (err) {
         return res.status(403).json({ message: 'Refresh token không hợp lệ hoặc đã hết hạn' });
       }
 
-      // Tạo access token mới
-      const accessToken = jwt.sign(
-        {
-          userId: user._id,
-          email: user.email,
-          roleId: user.roleId
-        },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '7d' }
-      );
+      // Tạo access token mới (15 minutes - sử dụng utility function)
+      const accessToken = createAccessToken({
+        userId: user._id,
+        email: user.email,
+        roleId: user.roleId
+      });
+
+      // Tạo refresh token mới luôn để tăng bảo mật (rotation)
+      const newRefreshToken = createRefreshToken({
+        userId: user._id
+      });
+
+      // Cập nhật refresh token mới vào database
+      user.refreshToken = newRefreshToken;
+      await user.save();
+
+      // Set refresh token mới vào httpOnly cookie
+      res.cookie('refreshToken', newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'Lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 ngày
+      });
 
       res.json({
         token: accessToken,
+        refreshToken: newRefreshToken,
         user: {
           id: user._id,
           email: user.email,

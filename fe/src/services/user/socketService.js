@@ -1,17 +1,10 @@
 import { io } from 'socket.io-client';
 import { store } from '../../redux/store';
 // URL của server (cổng Express/Socket.IO)
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:9999';
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://34.96.147.17';
 
 
-const getUserIdFromStorage = () => {
-  const userString = localStorage.getItem('user'); //
-  if (userString) {
-    const user = JSON.parse(userString);
-    return user._id || user.id || null;
-  }
-  return null;
-};
+
 
 let socket;
 
