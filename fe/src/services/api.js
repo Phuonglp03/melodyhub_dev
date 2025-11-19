@@ -2,7 +2,7 @@ import axios from 'axios';
 import { store } from '../redux/store';
 import { logout, updateTokens } from '../redux/authSlice';
 
-const API_BASE_URL= 'https://api.melodyhub.online/api';
+const API_BASE_URL= 'http://api.melodyhub.online/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
