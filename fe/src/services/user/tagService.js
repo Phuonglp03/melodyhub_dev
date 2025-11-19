@@ -1,6 +1,6 @@
 import { API_CONFIG } from "../../config/api";
 
-const API_BASE_URL = API_CONFIG.API_BASE_URL || "http://api.melodyhub.online";
+const API_BASE_URL = API_CONFIG.API_BASE_URL || "https://api.melodyhub.online";
 const API_BASE = API_BASE_URL.endsWith("/api")
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;

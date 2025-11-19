@@ -39,7 +39,7 @@ const LickCommunityPage = () => {
       }
 
       const response = await axios.get(
-        "http://localhost:9999/api/licks/community",
+        "https://api.melodyhub.online/api/licks/community",
         {
           params,
         }

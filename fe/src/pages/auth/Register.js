@@ -47,7 +47,7 @@ const Register = () => {
       
       console.log('Sending registration data:', requestData);
       
-      const response = await axios.post('http://localhost:9999/api/auth/register', requestData);
+      const response = await axios.post('https://api.melodyhub.online/api/auth/register', requestData);
       
       console.log('Registration response:', response.data);
       messageApi.success('Please check your email for OTP verification code');

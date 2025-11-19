@@ -14,7 +14,7 @@ const ForgotPassword = () => {
     setLoading(true);
     try {
       // Call the API to send the password reset email
-      await axios.post('http://localhost:9999/api/auth/forgot-password', {
+      await axios.post('https://api.melodyhub.online/api/auth/forgot-password', {
         email: values.email,
       });
       

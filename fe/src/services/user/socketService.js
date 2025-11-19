@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { store } from '../../redux/store';
 // URL của server (cổng Express/Socket.IO)
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://api.melodyhub.online';
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'https://api.melodyhub.online';
 
 
 

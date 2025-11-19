@@ -4,7 +4,7 @@ export const API_CONFIG = {
   USE_MOCK_DATA: false,
 
   // Backend API URL
-  API_BASE_URL: process.env.REACT_APP_API_URL || "http://localhost:9999/api",
+  API_BASE_URL: process.env.REACT_APP_API_URL || "https://api.melodyhub.online/api",
 
   // Mock data delay (ms) - to simulate network latency
   MOCK_DELAY: 500,

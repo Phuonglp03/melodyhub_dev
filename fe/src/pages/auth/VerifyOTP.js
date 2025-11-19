@@ -62,7 +62,7 @@ const VerifyOTP = () => {
       setLoading(true);
       
       // Call the verify email API
-      const response = await axios.post('http://localhost:9999/api/auth/verify-email', {
+      const response = await axios.post('https://api.melodyhub.online/api/auth/verify-email', {
         email,
         otp: values.otp
       });
@@ -97,7 +97,7 @@ const VerifyOTP = () => {
     setLoading(true);
     
     try {
-      await axios.post('http://localhost:9999/api/auth/resend-otp', { email });
+      await axios.post('https://api.melodyhub.online/api/auth/resend-otp', { email });
       
       messageApi.success('New OTP code sent to your email. Please check your inbox and spam folder.');
       
