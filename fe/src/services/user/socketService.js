@@ -16,6 +16,7 @@ export const initSocket = (explicitUserId) => {
   if (userId) {
     socket = io(SOCKET_URL, {
       query: { userId: userId },
+      transports: ['websocket'],
     });
 
     socket.on('connect', () => {
