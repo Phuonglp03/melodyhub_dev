@@ -30,7 +30,7 @@ export const nodeMediaServer = () => {
         {
           app: 'live',
           hls: true,
-          hlsFlags: '[hls_time=2:hls_list_size=3:hls_flags=delete_segments+append_list]',
+          hlsFlags: '[hls_time=4:hls_list_size=10:hls_flags=delete_segments]',
           hlsKeep: false, // Auto delete old segments to save disk space
           dash: false,
           dashFlags: '[f=dash:window_size=3:extra_window_size=5]'
