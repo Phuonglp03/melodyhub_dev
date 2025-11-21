@@ -15,6 +15,7 @@ import { Select, Button } from 'antd';
 import EmojiPicker from 'emoji-picker-react';
 import { useSelector } from 'react-redux';
 import { SmileOutlined } from '@ant-design/icons';
+import LiveVideo from '../../../components/LiveVideo';
 
 
 const LiveStreamCreate = () => {
@@ -115,11 +116,24 @@ const LiveStreamCreate = () => {
         fluid: false,
         fill: true,
         liveui: true,
+        liveTracker: {
+          trackingThreshold: 20,
+          liveTolerance: 15
+        },
+        controlBar: {
+          progressControl: false,
+          currentTimeDisplay: false,
+          timeDivider: false,
+          durationDisplay: false,
+          remainingTimeDisplay: false
+        },
         html5: {
           vhs: {
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
-            overrideNative: true
+            overrideNative: true,
+            bandwidth: 4194304,
+            limitRenditionByPlayerDimensions: false
           },
           nativeAudioTracks: false,
           nativeVideoTracks: false
@@ -135,6 +149,17 @@ const LiveStreamCreate = () => {
 
       player.on('error', () => {
         console.error('Video.js error:', player.error());
+      });
+
+      player.on('loadedmetadata', () => {
+        console.log('[Video.js] Metadata loaded');
+      });
+
+      player.on('canplay', () => {
+        console.log('[Video.js] Can play');
+        player.play().catch(e => {
+          console.error('[Video.js] Play error:', e);
+        });
       });
     }
 
@@ -376,13 +401,16 @@ const LiveStreamCreate = () => {
                 <p style={{ margin: 0, fontSize: '15px' }}>Đang chờ tín hiệu từ OBS...</p>
               </div>
             ) : previewUrl ? (
-              <div data-vjs-player style={{ width: '100%', height: '100%' }}>
-                <video
-                  ref={videoRef}
-                  className="video-js vjs-big-play-centered"
-                  style={{ width: '100%', height: '100%' }}
-                />
-              </div>
+              <>
+                <div data-vjs-player style={{ width: '100%', height: '100%' }}>
+                  <video
+                    ref={videoRef}
+                    className="video-js vjs-big-play-centered"
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                </div>
+                {playerRef.current && <LiveVideo player={playerRef.current} />}
+              </>
             ) : (
               <div style={{ textAlign: 'center', color: '#242526' }}>
                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>🔹</div>

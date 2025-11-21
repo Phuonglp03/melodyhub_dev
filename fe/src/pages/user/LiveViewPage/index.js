@@ -15,6 +15,7 @@ import {
   onChatError,
   onMessageRemoved
 } from '../../../services/user/socketService';
+import LiveVideo from '../../../components/LiveVideo';
 
 const LiveViewPage = () => {
   const { roomId } = useParams();
@@ -280,19 +281,23 @@ const LiveViewPage = () => {
           overflow: 'hidden'
         }}>
           {playbackUrl ? (
-            <div data-vjs-player style={{ 
-              width: '100%', 
-              height: '100%',
-              position: 'relative'
-            }}>
-              <video
-                ref={videoRef}
-                className="video-js vjs-big-play-centered vjs-16-9"
-                playsInline
-                preload="auto"
-                style={{ width: '100%', height: '100%' }}
-              />
-            </div>
+            <>
+              <div data-vjs-player style={{ 
+                width: '100%', 
+                height: '100%',
+                position: 'relative'
+              }}>
+                <video
+                  ref={videoRef}
+                  className="video-js vjs-big-play-centered vjs-16-9"
+                  playsInline
+                  preload="auto"
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </div>
+              {/* Live Indicator with delay detection */}
+              {playerRef.current && <LiveVideo player={playerRef.current} />}
+            </>
           ) : (
             <div style={{
               width: '100%',

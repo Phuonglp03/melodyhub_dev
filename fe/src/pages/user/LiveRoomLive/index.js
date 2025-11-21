@@ -24,6 +24,7 @@ import { Dropdown, Button } from 'antd';
 import { MoreOutlined, SendOutlined, SmileOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import EmojiPicker from 'emoji-picker-react';
+import LiveVideo from '../../../components/LiveVideo';
 
 const LiveStreamLive = () => {
   const { roomId } = useParams();
@@ -480,22 +481,8 @@ const LiveStreamLive = () => {
                     preload="auto"
                   />
                 </div>
-                {/* Live Badge */}
-                <div style={{
-                  position: 'absolute',
-                  top: '16px',
-                  left: '16px',
-                  background: '#ff0000',
-                  color: 'white',
-                  padding: '6px 16px',
-                  borderRadius: '4px',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  zIndex: 1000,
-                  pointerEvents: 'none'
-                }}>
-                  Trực Tiếp
-                </div>
+                {/* Live Indicator with delay detection */}
+                {playerRef.current && <LiveVideo player={playerRef.current} />}
               </>
             ) : (
               <div style={{
@@ -541,7 +528,7 @@ const LiveStreamLive = () => {
                 margin: '0 0 16px 0',
                 fontSize: '17px',
                 fontWeight: '600'
-              }}>Thông tin chi tiết</h3>
+              }}>Thông tin chi tiết `{playbackUrl}`</h3>
 
               {/* Row 1: Người xem + Tin nhắn */}
               <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>

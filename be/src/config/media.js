@@ -4,7 +4,7 @@ import { getSocketIo } from './socket.js'; // Import từ file socket.js
 import net from 'net';
 
 export const nodeMediaServer = () => {
-  // Cấu hình chi tiết cho Node Media Server
+  // Cấu hình chi tiết cho Node Media Server (Production-optimized)
   const config = {
     logType: 3,
     rtmp: {
@@ -17,7 +17,12 @@ export const nodeMediaServer = () => {
     http: {
       port: 8000, 
       mediaroot: './media', 
-      allow_origin: '*'
+      allow_origin: '*',
+      cors: {
+        allowOrigin: '*',
+        allowMethods: ['GET', 'HEAD', 'OPTIONS'],
+        allowHeaders: ['Range', 'Content-Type', 'Accept']
+      }
     },
     trans: {
       ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
@@ -25,10 +30,10 @@ export const nodeMediaServer = () => {
         {
           app: 'live',
           hls: true,
-          hlsFlags: '[hls_time=6:hls_list_size=0:hls_flags=append_list]',
-          hlsKeep: true,
-          flv: true,
-          flvFlags: '[flv_fragment_duration=10]'
+          hlsFlags: '[hls_time=2:hls_list_size=3:hls_flags=delete_segments+append_list]',
+          hlsKeep: false, // Auto delete old segments to save disk space
+          dash: false,
+          dashFlags: '[f=dash:window_size=3:extra_window_size=5]'
         }
       ]
     },
