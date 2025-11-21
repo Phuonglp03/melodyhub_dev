@@ -22,7 +22,16 @@ export const nodeMediaServer = () => {
         allowOrigin: '*',
         allowMethods: ['GET', 'HEAD', 'OPTIONS'],
         allowHeaders: ['Range', 'Content-Type', 'Accept']
+      },
+      setHeaders: (res, path, stat) => {
+        // Nếu là file playlist (.m3u8), cấm tuyệt đối việc cache
+        if (path.endsWith('.m3u8')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+          res.setHeader('Expires', '0');
+          res.setHeader('Pragma', 'no-cache');
+        }
       }
+      
     },
     trans: {
       ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
@@ -30,7 +39,7 @@ export const nodeMediaServer = () => {
         {
           app: 'live',
           hls: true,
-          hlsFlags: '[hls_time=4:hls_list_size=10:hls_flags=delete_segments]',
+          hlsFlags: '[hls_time=4:hls_list_size=4:hls_flags=delete_segments]',
           hlsKeep: false, // Auto delete old segments to save disk space
           dash: false,
           dashFlags: '[f=dash:window_size=3:extra_window_size=5]'

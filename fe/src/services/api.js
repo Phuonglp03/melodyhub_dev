@@ -41,10 +41,27 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     
+    // List of auth endpoints that should NOT trigger token refresh
+    const authEndpoints = [
+      '/auth/login',
+      '/auth/register',
+      '/auth/verify-email',
+      '/auth/resend-otp',
+      '/auth/forgot-password',
+      '/auth/reset-password',
+      '/auth/refresh-token',
+      '/auth/google'
+    ];
+    
+    // Check if the failed request is an auth endpoint
+    const isAuthEndpoint = authEndpoints.some(endpoint => 
+      originalRequest.url?.includes(endpoint)
+    );
+    
     // If 401 (Unauthorized) or 403 (Forbidden - token expired) and haven't retried yet
     const shouldRefreshToken = (error.response?.status === 401 || error.response?.status === 403) 
       && !originalRequest._retry
-      && originalRequest.url !== '/auth/refresh-token'; // Don't retry refresh token endpoint
+      && !isAuthEndpoint; // Don't retry for auth endpoints
     
     if (shouldRefreshToken) {
       originalRequest._retry = true;

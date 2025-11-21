@@ -116,24 +116,44 @@ const LiveStreamCreate = () => {
         fluid: false,
         fill: true,
         liveui: true,
+        // CẤU HÌNH LIVE TRACKER MỚI:
         liveTracker: {
-          trackingThreshold: 20,
-          liveTolerance: 15
+          trackingThreshold: 15, // Giảm xuống để sát hơn
+          liveTolerance: 10,     // Chấp nhận độ lệch 10s
         },
         controlBar: {
-          progressControl: false,
+          progressControl: false, // ✅ Ẩn progress bar như host
           currentTimeDisplay: false,
           timeDivider: false,
           durationDisplay: false,
-          remainingTimeDisplay: false
+          remainingTimeDisplay: false,
+          seekToLive: true // Hiện nút "LIVE"
         },
         html5: {
           vhs: {
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
             overrideNative: true,
-            bandwidth: 4194304,
-            limitRenditionByPlayerDimensions: false
+            
+            // --- CẤU HÌNH QUAN TRỌNG ĐỂ KHẮC PHỤC LỖI 404/DECODE ---
+            
+            // 1. Tự động thử lại khi lỗi (Thay vì sập luôn)
+            // Cho phép reload playlist nếu gặp lỗi tải segment
+            playlistRetryCount: 3,     
+            playlistRetryDelay: 500,   // Thử lại sau 0.5s
+            
+            // 2. Cấu hình bộ đệm (Buffer)
+            // Giữ buffer thấp để giảm độ trễ (nhưng rủi ro hơn)
+            bufferBasedBitrateSelection: true,
+            
+            // 3. Xử lý Live Sync (Đồng bộ)
+            // Nếu bạn muốn sát nhất, hãy để số thấp (ví dụ 2), 
+            // NHƯNG nếu mạng GCS chậm, nó sẽ gây lỗi. 
+            // Con số 3 là mức "An toàn tối thiểu". Đừng để thấp hơn.
+            liveSyncDurationCount: 2, 
+            
+            // Cho phép player rượt đuổi nếu bị tụt lại quá xa (15s)
+            liveMaxLatencyDurationCount: 10, 
           },
           nativeAudioTracks: false,
           nativeVideoTracks: false
@@ -235,12 +255,47 @@ const LiveStreamCreate = () => {
         fluid: false,
         fill: true,
         liveui: true,
+        // CẤU HÌNH LIVE TRACKER MỚI:
+        liveTracker: {
+          trackingThreshold: 15, // Giảm xuống để sát hơn
+          liveTolerance: 10,     // Chấp nhận độ lệch 10s
+        },
+        controlBar: {
+          progressControl: false, // ✅ Ẩn progress bar như host
+          currentTimeDisplay: false,
+          timeDivider: false,
+          durationDisplay: false,
+          remainingTimeDisplay: false,
+          seekToLive: true // Hiện nút "LIVE"
+        },
         html5: {
           vhs: {
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
-            overrideNative: true
-          }
+            overrideNative: true,
+            
+            // --- CẤU HÌNH QUAN TRỌNG ĐỂ KHẮC PHỤC LỖI 404/DECODE ---
+            
+            // 1. Tự động thử lại khi lỗi (Thay vì sập luôn)
+            // Cho phép reload playlist nếu gặp lỗi tải segment
+            playlistRetryCount: 3,     
+            playlistRetryDelay: 500,   // Thử lại sau 0.5s
+            
+            // 2. Cấu hình bộ đệm (Buffer)
+            // Giữ buffer thấp để giảm độ trễ (nhưng rủi ro hơn)
+            bufferBasedBitrateSelection: true,
+            
+            // 3. Xử lý Live Sync (Đồng bộ)
+            // Nếu bạn muốn sát nhất, hãy để số thấp (ví dụ 2), 
+            // NHƯNG nếu mạng GCS chậm, nó sẽ gây lỗi. 
+            // Con số 3 là mức "An toàn tối thiểu". Đừng để thấp hơn.
+            liveSyncDurationCount: 2, 
+            
+            // Cho phép player rượt đuổi nếu bị tụt lại quá xa (15s)
+            liveMaxLatencyDurationCount: 10, 
+          },
+          nativeAudioTracks: false,
+          nativeVideoTracks: false
         }
       });
 

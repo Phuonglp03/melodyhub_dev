@@ -213,30 +213,51 @@ const LiveStreamLive = () => {
             fluid: false,
             fill: true,
             liveui: true,
+            // CẤU HÌNH LIVE TRACKER MỚI:
             liveTracker: {
-              trackingThreshold: 20,
-              liveTolerance: 15
+              trackingThreshold: 15, // Giảm xuống để sát hơn
+              liveTolerance: 10,     // Chấp nhận độ lệch 10s
             },
             controlBar: {
-              progressControl: false,
+              progressControl: false, // ✅ Ẩn progress bar như host
               currentTimeDisplay: false,
               timeDivider: false,
               durationDisplay: false,
               remainingTimeDisplay: false,
-              seekToLive: true
+              seekToLive: true // Hiện nút "LIVE"
             },
             html5: {
               vhs: {
                 enableLowInitialPlaylist: true,
                 smoothQualityChange: true,
                 overrideNative: true,
-                bandwidth: 4194304,
-                limitRenditionByPlayerDimensions: false
+                
+                // --- CẤU HÌNH QUAN TRỌNG ĐỂ KHẮC PHỤC LỖI 404/DECODE ---
+                
+                // 1. Tự động thử lại khi lỗi (Thay vì sập luôn)
+                // Cho phép reload playlist nếu gặp lỗi tải segment
+                playlistRetryCount: 3,     
+                playlistRetryDelay: 500,   // Thử lại sau 0.5s
+                
+                // 2. Cấu hình bộ đệm (Buffer)
+                // Giữ buffer thấp để giảm độ trễ (nhưng rủi ro hơn)
+                bufferBasedBitrateSelection: true,
+                
+                // 3. Xử lý Live Sync (Đồng bộ)
+                // Nếu bạn muốn sát nhất, hãy để số thấp (ví dụ 2), 
+                // NHƯNG nếu mạng GCS chậm, nó sẽ gây lỗi. 
+                // Con số 3 là mức "An toàn tối thiểu". Đừng để thấp hơn.
+                liveSyncDurationCount: 2, 
+                
+                // Cho phép player rượt đuổi nếu bị tụt lại quá xa (15s)
+                liveMaxLatencyDurationCount: 7, 
               },
               nativeAudioTracks: false,
               nativeVideoTracks: false
             }
           });
+
+          
 
           player.src({
             src: playbackUrl,
@@ -245,15 +266,7 @@ const LiveStreamLive = () => {
 
           playerRef.current = player;
 
-          player.on('error', (e) => {
-            const error = player.error();
-            console.error('[Video.js] Error:', error);
-            console.error('[Video.js] Error details:', {
-              code: error?.code,
-              message: error?.message,
-              type: error?.type
-            });
-          });
+           
 
           player.on('loadedmetadata', () => {
             console.log('[Video.js] Metadata loaded');
@@ -274,6 +287,26 @@ const LiveStreamLive = () => {
             console.log('[Video.js] Playing');
           });
 
+          // --- THÊM: XỬ LÝ LỖI TỰ ĐỘNG ---
+          // Nếu gặp lỗi mạng (như 404), thử reload lại nguồn sau 1s
+          player.on('error', () => {
+            const err = player.error();
+            console.warn('VideoJS Error:', err);
+            
+            // Nếu là lỗi mạng hoặc lỗi decode
+            if (err && (err.code === 2 || err.code === 3 || err.code === 4)) {
+                console.log('Đang thử khôi phục stream...');
+                setTimeout(() => {
+                    if (player && !player.isDisposed()) {
+                        player.src({
+                            src: playbackUrl,
+                            type: 'application/x-mpegURL'
+                        });
+                        player.play().catch(e => console.log('Auto-play prevented'));
+                    }
+                }, 1500); // Đợi 1.5s rồi thử lại
+            }
+          });
           player.on('waiting', () => {
             console.log('[Video.js] Waiting/Buffering');
           });
