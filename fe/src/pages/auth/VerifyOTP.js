@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Typography, message, ConfigProvider } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import { verifyEmail, resendOTP } from '../../services/authService';
 import './Register.css';
 import './VerifyOTP.css';
 
@@ -62,12 +62,9 @@ const VerifyOTP = () => {
       setLoading(true);
       
       // Call the verify email API
-      const response = await axios.post('https://api.melodyhub.online/api/auth/verify-email', {
-        email,
-        otp: values.otp
-      });
+      const result = await verifyEmail(email, values.otp);
 
-      if (response.data.success) {
+      if (result.success) {
         messageApi.success('Xác thực email thành công! Vui lòng đăng nhập.');
         
         // Redirect to login page with success message
@@ -81,8 +78,7 @@ const VerifyOTP = () => {
       }
     } catch (error) {
       console.error('OTP verification error:', error);
-      const errorMessage = error.response?.data?.message || 'Có lỗi xảy ra khi xác thực OTP';
-      messageApi.error(errorMessage);
+      messageApi.error(error.message || 'Có lỗi xảy ra khi xác thực OTP');
     } finally {
       setLoading(false);
     }
@@ -97,7 +93,7 @@ const VerifyOTP = () => {
     setLoading(true);
     
     try {
-      await axios.post('https://api.melodyhub.online/api/auth/resend-otp', { email });
+      await resendOTP(email);
       
       messageApi.success('New OTP code sent to your email. Please check your inbox and spam folder.');
       
@@ -106,11 +102,10 @@ const VerifyOTP = () => {
       startCountdown();
     } catch (error) {
       console.error('Error resending OTP:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to resend OTP code';
-      messageApi.error(errorMessage);
+      messageApi.error(error.message || 'Failed to resend OTP code');
       
       // If user not found, redirect to appropriate page
-      if (error.response?.status === 404) {
+      if (error.message.includes('not found')) {
         setTimeout(() => {
           navigate(location.state?.fromLogin ? '/login' : '/register');
         }, 1500);

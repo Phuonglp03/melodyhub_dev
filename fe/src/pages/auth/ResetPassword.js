@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, message, ConfigProvider } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import { resetPassword as resetPasswordRequest } from '../../services/authService';
 
 const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
@@ -41,11 +41,7 @@ const ResetPassword = () => {
     setLoading(true);
     try {
       // Call the API to reset the password
-      await axios.post('https://api.melodyhub.online/api/auth/reset-password', {
-        token,
-        email,
-        newPassword: values.newPassword,
-      });
+      await resetPasswordRequest(token, email, values.newPassword);
       
       messageApi.success('Password reset successful!');
       
@@ -55,17 +51,7 @@ const ResetPassword = () => {
       }, 2000);
     } catch (error) {
       console.error('Error resetting password:', error);
-      
-      if (error.response) {
-        // Server responded with a status code outside the 2xx range (e.g., 400 for invalid token)
-        messageApi.error(error.response.data?.message || 'An error occurred. Please try again later.');
-      } else if (error.request) {
-        // The request was made but no response was received (e.g., network error)
-        messageApi.error('Cannot connect to the server. Please check your network connection.');
-      } else {
-        // Something else happened while setting up the request
-        messageApi.error('An error occurred. Please try again.');
-      }
+      messageApi.error(error.message || 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }

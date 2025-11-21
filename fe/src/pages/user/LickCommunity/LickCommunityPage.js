@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FaSearch, FaFilter } from "react-icons/fa";
-import axios from "axios";
+import { getCommunityLicks } from "../../../services/user/lickService";
 import LickCard from "../../../components/LickCard";
 
 // --- Main Lick Community Page ---
@@ -38,20 +38,15 @@ const LickCommunityPage = () => {
         params.tags = selectedTags;
       }
 
-      const response = await axios.get(
-        "https://api.melodyhub.online/api/licks/community",
-        {
-          params,
-        }
-      );
+      const response = await getCommunityLicks(params);
 
-      if (response.data.success) {
-        setLicks(response.data.data);
-        setPagination(response.data.pagination);
+      if (response.success) {
+        setLicks(response.data);
+        setPagination(response.pagination);
       }
     } catch (err) {
       console.error("Error fetching licks:", err);
-      setError(err.response?.data?.message || "Failed to load licks");
+      setError(err.message || "Failed to load licks");
     } finally {
       setLoading(false);
     }

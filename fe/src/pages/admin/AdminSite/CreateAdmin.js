@@ -12,7 +12,7 @@ import {
   EyeOff,
   AlertCircle 
 } from 'lucide-react';
-import axios from 'axios';
+import api from '../../../services/api';
 
 const CreateAdmin = () => {
   const navigate = useNavigate();
@@ -109,7 +109,7 @@ const CreateAdmin = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await axios.post('/api/admin/create', {
+      const response = await api.post('/admin/create', {
         username: formData.username,
         email: formData.email,
         password: formData.password,

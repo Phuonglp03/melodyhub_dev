@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Form, Input, Button, message, ConfigProvider } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { forgotPassword as sendForgotPasswordRequest } from '../../services/authService';
 
 const ForgotPassword = () => {
   const [loading, setLoading] = useState(false);
@@ -14,9 +14,7 @@ const ForgotPassword = () => {
     setLoading(true);
     try {
       // Call the API to send the password reset email
-      await axios.post('https://api.melodyhub.online/api/auth/forgot-password', {
-        email: values.email,
-      });
+      await sendForgotPasswordRequest(values.email);
       
       // Note: The backend should always return a 200/success response
       // to prevent email enumeration, regardless of whether the email exists.
@@ -25,20 +23,7 @@ const ForgotPassword = () => {
       messageApi.success('Password reset instructions have been sent to your email!');
     } catch (error) {
       console.error('Error sending reset password email:', error);
-      
-      // Handle different types of errors
-      if (error.response) {
-        // Server responded with a status code outside the 2xx range
-        // Since the backend should return 200 even if the email isn't found, 
-        // this is for genuine server errors (500) or client errors (4xx) not related to enumeration.
-        messageApi.error(error.response.data?.message || 'An error occurred. Please try again later.');
-      } else if (error.request) {
-        // The request was made but no response was received (e.g., network error)
-        messageApi.error('Cannot connect to the server. Please check your network connection.');
-      } else {
-        // Something else happened while setting up the request
-        messageApi.error('An unexpected error occurred. Please try again.');
-      }
+      messageApi.error(error.message || 'An error occurred. Please try again later.');
     } finally {
       setLoading(false);
     }

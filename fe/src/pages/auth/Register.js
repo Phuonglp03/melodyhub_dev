@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Form, Input, Button, message, ConfigProvider } from 'antd';
 import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import { register as registerUser } from '../../services/authService';
 import './Register.css';
 
 message.config({
@@ -47,9 +47,9 @@ const Register = () => {
       
       console.log('Sending registration data:', requestData);
       
-      const response = await axios.post('https://api.melodyhub.online/api/auth/register', requestData);
+      const result = await registerUser(requestData);
       
-      console.log('Registration response:', response.data);
+      console.log('Registration response:', result);
       messageApi.success('Please check your email for OTP verification code');
       
       // Navigate to OTP verification page after short delay
@@ -62,15 +62,8 @@ const Register = () => {
         });
       }, 1000);
     } catch (error) {
-      console.error('Registration error:', error.response?.data || error.message);
-      
-      // Display detailed error message
-      if (error.response?.data?.errors) {
-        const errorMessages = error.response.data.errors.map(err => err.msg).join(', ');
-        messageApi.error(errorMessages);
-      } else {
-        messageApi.error(error.response?.data?.message || 'Registration failed. Please try again.');
-      }
+      console.error('Registration error:', error);
+      messageApi.error(error.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
