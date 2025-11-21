@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import User from '../models/User.js';
 import { generateTokens } from './authController.js';
+import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../constants/userConstants.js';
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -48,12 +49,17 @@ export const findOrCreateUser = async (profile) => {
           email: profile.email,
           username: await generateUniqueUsername(profile.email.split('@')[0]),
           displayName: profile.name,
-          avatarUrl: profile.picture,
+          avatarUrl: profile.picture || DEFAULT_AVATAR_URL,
           passwordHash: passwordHash,
           verifiedEmail: true,
         });
         await user.save();
       }
+    }
+
+    if (!user.avatarUrl || typeof user.avatarUrl !== 'string' || user.avatarUrl.trim() === '') {
+      user.avatarUrl = DEFAULT_AVATAR_URL;
+      await user.save();
     }
 
     return user;
@@ -101,7 +107,7 @@ export const googleLogin = async (req, res) => {
     const user = await findOrCreateUser(profile);
 
     // Generate JWT tokens
-    const { accessToken, refreshToken } = generateTokens(user);
+    const { accessToken, refreshToken } = await generateTokens(user);
 
     // Set refresh token in HTTP-only cookie
     res.cookie('refreshToken', refreshToken, {
@@ -117,7 +123,7 @@ export const googleLogin = async (req, res) => {
       email: user.email,
       username: user.username,
       displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: normalizeAvatarUrl(user.avatarUrl),
       roleId: user.roleId,
       verifiedEmail: user.verifiedEmail,
     };

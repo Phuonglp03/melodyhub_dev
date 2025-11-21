@@ -2,7 +2,7 @@
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const ACCESS_TOKEN_EXPIRES_IN = '1h';  // 15 phút
+const ACCESS_TOKEN_EXPIRES_IN = '15m';  // 15 phút
 const REFRESH_TOKEN_EXPIRES_IN = '7d';  // 7 ngày
 
 // Tạo access token

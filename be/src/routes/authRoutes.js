@@ -25,7 +25,32 @@ router.post(
       .withMessage('Mật khẩu phải có ít nhất 6 ký tự'),
     body('fullName')
       .notEmpty()
-      .withMessage('Vui lòng nhập họ tên')
+      .withMessage('Vui lòng nhập họ tên'),
+    body('gender')
+      .isIn(['male', 'female', 'other'])
+      .withMessage('Vui lòng chọn giới tính hợp lệ'),
+    body('addressLine')
+      .isString()
+      .notEmpty()
+      .withMessage('Vui lòng nhập địa chỉ chi tiết'),
+    body('provinceCode')
+      .notEmpty()
+      .withMessage('Vui lòng chọn tỉnh/thành phố'),
+    body('provinceName')
+      .notEmpty()
+      .withMessage('Vui lòng chọn tỉnh/thành phố'),
+    body('districtCode')
+      .notEmpty()
+      .withMessage('Vui lòng chọn quận/huyện'),
+    body('districtName')
+      .notEmpty()
+      .withMessage('Vui lòng chọn quận/huyện'),
+    body('wardCode')
+      .notEmpty()
+      .withMessage('Vui lòng chọn phường/xã'),
+    body('wardName')
+      .notEmpty()
+      .withMessage('Vui lòng chọn phường/xã')
   ],
   register
 );

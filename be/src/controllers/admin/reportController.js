@@ -1,10 +1,10 @@
-import ContentReport from '../models/ContentReport.js';
-import Post from '../models/Post.js';
-import PostLike from '../models/PostLike.js';
-import PostComment from '../models/PostComment.js';
+import ContentReport from '../../models/ContentReport.js';
+import Post from '../../models/Post.js';
+import PostLike from '../../models/PostLike.js';
+import PostComment from '../../models/PostComment.js';
 import mongoose from 'mongoose';
-import { createNotification } from '../utils/notificationHelper.js';
-import { getSocketIo } from '../config/socket.js';
+import { createNotification } from '../../utils/notificationHelper.js';
+import { getSocketIo } from '../../config/socket.js';
 
 /**
  * Report a post

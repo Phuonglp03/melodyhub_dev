@@ -1,16 +1,11 @@
 import User from '../models/User.js';
 import Post from '../models/Post.js';
+import PostLike from '../models/PostLike.js';
+import PostComment from '../models/PostComment.js';
 import UserFollow from '../models/UserFollow.js';
 import cloudinary, { uploadImage } from '../config/cloudinary.js';
 import { notifyUserFollowed } from '../utils/notificationHelper.js';
-
-// Helper function to normalize avatar URL
-const normalizeAvatarUrl = (avatarUrl) => {
-  if (!avatarUrl || typeof avatarUrl !== 'string' || avatarUrl.trim() === '') {
-    return '/default-avatar.svg';
-  }
-  return avatarUrl.trim();
-};
+import { normalizeAvatarUrl } from '../constants/userConstants.js';
 
 // Get current user profile (authenticated user)
 export const getCurrentUserProfile = async (req, res) => {
@@ -48,7 +43,7 @@ export const getCurrentUserProfile = async (req, res) => {
           location: user.location,
           bio: user.bio,
           links: user.links || [],
-          avatarUrl: user.avatarUrl,
+          avatarUrl: normalizeAvatarUrl(user.avatarUrl),
           coverPhotoUrl: user.coverPhotoUrl,
           roleId: user.roleId,
           isActive: user.isActive,
@@ -169,7 +164,7 @@ export const getUserProfileById = async (req, res) => {
           birthday: user.birthday,
           bio: user.bio,
           links: user.links || [],
-          avatarUrl: user.avatarUrl,
+          avatarUrl: normalizeAvatarUrl(user.avatarUrl),
           coverPhotoUrl: user.coverPhotoUrl,
           verifiedEmail: user.verifiedEmail,
           totalLikesReceived: user.totalLikesReceived,
@@ -271,7 +266,7 @@ export const getUserProfileByUsername = async (req, res) => {
           birthday: user.birthday,
           bio: user.bio,
           links: user.links || [],
-          avatarUrl: user.avatarUrl,
+          avatarUrl: normalizeAvatarUrl(user.avatarUrl),
           coverPhotoUrl: user.coverPhotoUrl,
           verifiedEmail: user.verifiedEmail,
           totalLikesReceived: user.totalLikesReceived,
@@ -396,7 +391,7 @@ export const updateUserProfile = async (req, res) => {
           location: user.location,
           bio: user.bio,
           links: user.links || [],
-          avatarUrl: user.avatarUrl,
+          avatarUrl: normalizeAvatarUrl(user.avatarUrl),
           coverPhotoUrl: user.coverPhotoUrl,
           roleId: user.roleId,
           verifiedEmail: user.verifiedEmail,
@@ -662,39 +657,212 @@ export const unfollowUser = async (req, res) => {
 export const getFollowSuggestions = async (req, res) => {
   try {
     const userId = req.userId;
-    const limit = parseInt(req.query.limit) || 10;
+    const userIdStr = userId?.toString();
+    const limit = parseInt(req.query.limit, 10) || 10;
 
-    // Get users that the current user is already following
-    const followingIds = await UserFollow.find({ followerId: userId })
-      .select('followingId')
-      .lean();
-    const followingIdsArray = followingIds.map(f => f.followingId);
+    const MUTUAL_WEIGHT = 3;
+    const SHARED_FOLLOWER_WEIGHT = 2;
+    const LIKE_INTERACTION_WEIGHT = 5; // Tăng trọng số để ưu tiên tương tác trực tiếp
+    const COMMENT_INTERACTION_WEIGHT = 6; // Comment có trọng số cao hơn like
+    const POPULARITY_WEIGHT = 1;
+    const POOL_MULTIPLIER = 2; // build a slightly larger pool before slicing
 
-    // Get suggested users (not following, not self, active users)
+    const [followingRelations, followerRelations, likedPosts, commentedPosts] = await Promise.all([
+      UserFollow.find({ followerId: userId }).select('followingId').lean(),
+      UserFollow.find({ followingId: userId }).select('followerId').lean(),
+      PostLike.find({ userId }).select('postId').lean(),
+      PostComment.find({ userId }).select('postId').lean(),
+    ]);
+
+    const followingIds = followingRelations.map((rel) => rel.followingId);
+    const followedIdSet = new Set(followingRelations.map((rel) => rel.followingId.toString()));
+    // Prevent recommending the current user
+    followedIdSet.add(userIdStr);
+
+    const followerIds = followerRelations.map((rel) => rel.followerId);
+
+    const candidateScores = new Map();
+
+    const defaultMeta = () => ({
+      mutualFollowing: 0,
+      sharedFollowers: 0,
+      popularity: false,
+      interactions: {
+        likes: 0,
+        comments: 0,
+      },
+    });
+
+    const bumpCandidate = (candidateId, amount, metaKey) => {
+      if (!candidateId || !amount) return;
+      const candidateIdStr = candidateId.toString();
+      if (followedIdSet.has(candidateIdStr) || candidateIdStr === userIdStr) return;
+
+      const existing = candidateScores.get(candidateIdStr) || {
+        score: 0,
+        meta: defaultMeta(),
+      };
+      existing.score += amount;
+      if (metaKey === 'mutualFollowing') {
+        existing.meta.mutualFollowing = (existing.meta.mutualFollowing || 0) + 1;
+      } else if (metaKey === 'sharedFollowers') {
+        existing.meta.sharedFollowers = (existing.meta.sharedFollowers || 0) + 1;
+      } else if (metaKey === 'popularity') {
+        existing.meta.popularity = true;
+      } else if (metaKey === 'contentLike') {
+        existing.meta.interactions.likes = (existing.meta.interactions.likes || 0) + 1;
+      } else if (metaKey === 'contentComment') {
+        existing.meta.interactions.comments = (existing.meta.interactions.comments || 0) + 1;
+      }
+
+      candidateScores.set(candidateIdStr, existing);
+    };
+
+    // Heuristic 1: friends of friends (who people I follow are following)
+    if (followingIds.length) {
+      const secondDegreeFollows = await UserFollow.find({
+        followerId: { $in: followingIds },
+      })
+        .select('followingId')
+        .lean();
+
+      secondDegreeFollows.forEach(({ followingId }) => {
+        bumpCandidate(followingId, MUTUAL_WEIGHT, 'mutualFollowing');
+      });
+    }
+
+    // Heuristic 2: shared followers (who people that follow me are also following)
+    if (followerIds.length) {
+      const sharedFollowerEdges = await UserFollow.find({
+        followerId: { $in: followerIds },
+      })
+        .select('followingId')
+        .lean();
+
+      sharedFollowerEdges.forEach(({ followingId }) => {
+        bumpCandidate(followingId, SHARED_FOLLOWER_WEIGHT, 'sharedFollowers');
+      });
+    }
+
+    // Heuristic 3: content interactions (liked or commented posts)
+    const interactionPostIds = Array.from(
+      new Set(
+        [...likedPosts, ...commentedPosts]
+          .map((doc) => doc?.postId?.toString())
+          .filter(Boolean)
+      )
+    );
+
+    if (interactionPostIds.length) {
+      const posts = await Post.find({ _id: { $in: interactionPostIds } })
+        .select('_id userId')
+        .lean();
+      const postAuthorMap = new Map(posts.map((post) => [post._id.toString(), post.userId]));
+
+      likedPosts.forEach(({ postId }) => {
+        const authorId = postAuthorMap.get(postId?.toString());
+        if (!authorId) return;
+        bumpCandidate(authorId, LIKE_INTERACTION_WEIGHT, 'contentLike');
+      });
+
+      commentedPosts.forEach(({ postId }) => {
+        const authorId = postAuthorMap.get(postId?.toString());
+        if (!authorId) return;
+        bumpCandidate(authorId, COMMENT_INTERACTION_WEIGHT, 'contentComment');
+      });
+    }
+
+    // Fallback: add popular active users if pool is too small
+    if (candidateScores.size < limit * POOL_MULTIPLIER) {
+      const fallbackUsers = await User.find({ isActive: true })
+        .sort({ followersCount: -1, createdAt: -1 })
+        .limit(limit * 5)
+        .select('_id');
+
+      for (const user of fallbackUsers) {
+        bumpCandidate(user._id, POPULARITY_WEIGHT, 'popularity');
+        if (candidateScores.size >= limit * POOL_MULTIPLIER) break;
+      }
+    }
+
+    const buildReasons = (meta = {}) => {
+      const reasons = [];
+      // Thứ tự 1: Follow chung (mutualFollowing và sharedFollowers)
+      if (meta.mutualFollowing) {
+        reasons.push(`Được ${meta.mutualFollowing} người bạn của bạn theo dõi`);
+      }
+      if (meta.sharedFollowers) {
+        reasons.push(`${meta.sharedFollowers} người theo dõi bạn cũng theo dõi họ`);
+      }
+      // Thứ tự 2: Tương tác nội dung (interactions)
+      const totalInteractions =
+        (meta.interactions?.likes || 0) + (meta.interactions?.comments || 0);
+      if (totalInteractions) {
+        const likePart = meta.interactions?.likes || 0;
+        const commentPart = meta.interactions?.comments || 0;
+        if (commentPart && likePart) {
+          reasons.push(`Bạn đã thích/bình luận ${totalInteractions} bài viết của họ`);
+        } else if (commentPart) {
+          reasons.push(`Bạn đã bình luận ${commentPart} bài viết của họ`);
+        } else if (likePart) {
+          reasons.push(`Bạn đã thích ${likePart} bài viết của họ`);
+        }
+      }
+      // Thứ tự 3: Tài khoản nổi bật (chỉ hiển thị nếu không có tương tác)
+      if (meta.popularity && !totalInteractions) {
+        reasons.push('Tài khoản nổi bật trong cộng đồng');
+      }
+      if (!reasons.length) {
+        reasons.push('Gợi ý phù hợp với bạn');
+      }
+      return reasons.slice(0, 2);
+    };
+
+    const sortedCandidates = Array.from(candidateScores.entries())
+      .map(([id, value]) => ({ id, ...value }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    if (!sortedCandidates.length) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const candidateIds = sortedCandidates.map((candidate) => candidate.id);
     const users = await User.find({
-      _id: { $ne: userId, $nin: followingIdsArray },
-      isActive: true
+      _id: { $in: candidateIds },
+      isActive: true,
     })
-      .sort({ followersCount: -1, createdAt: -1 })
-      .limit(limit)
-      .select('username displayName avatarUrl followersCount');
+      .select('username displayName avatarUrl followersCount')
+      .lean();
+
+    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+    const data = sortedCandidates
+      .map((candidate) => {
+        const user = userMap.get(candidate.id);
+        if (!user) return null;
+        return {
+          id: user._id,
+          username: user.username,
+          displayName: user.displayName,
+          avatarUrl: normalizeAvatarUrl(user.avatarUrl),
+          followersCount: user.followersCount,
+          score: Number(candidate.score.toFixed(2)),
+          reasons: buildReasons(candidate.meta),
+        };
+      })
+      .filter(Boolean);
 
     res.status(200).json({
       success: true,
-      data: users.map((u) => ({
-        id: u._id,
-        username: u.username,
-        displayName: u.displayName,
-        avatarUrl: normalizeAvatarUrl(u.avatarUrl),
-        followersCount: u.followersCount,
-      }))
+      data,
     });
   } catch (error) {
     console.error('Error getting follow suggestions:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
     });
   }
 };

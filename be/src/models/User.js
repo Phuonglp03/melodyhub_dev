@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../constants/userConstants.js';
 
 const userSchema = new mongoose.Schema(
   {
@@ -9,12 +10,20 @@ const userSchema = new mongoose.Schema(
     displayName: { type: String, required: true, trim: true },
     birthday: { type: Date },
     gender: { type: String, enum: ['male', 'female', 'other', 'unspecified'], default: 'unspecified' },
+    addressLine: { type: String, trim: true, default: '' },
+    provinceCode: { type: String, trim: true, default: '' },
+    provinceName: { type: String, trim: true, default: '' },
+    districtCode: { type: String, trim: true, default: '' },
+    districtName: { type: String, trim: true, default: '' },
+    wardCode: { type: String, trim: true, default: '' },
+    wardName: { type: String, trim: true, default: '' },
     location: { type: String, trim: true, default: '' },
     bio: { type: String },
     links: { type: [String], default: [] },
-    avatarUrl: { type: String,trim: true,default: '' },
+    avatarUrl: { type: String, trim: true, default: DEFAULT_AVATAR_URL },
     coverPhotoUrl: { type: String, trim: true, default: '' },
     roleId: { type: String, enum: ['user', 'admin'], default: 'user', required: true },
+    permissions: { type: [String], default: [] },
     isActive: { type: Boolean, default: true, required: true },
     verifiedEmail: { type: Boolean, default: false, required: true },
     otp: { type: String },
@@ -48,6 +57,7 @@ const userSchema = new mongoose.Schema(
         delete ret.otpExpires;
         delete ret.resetPasswordToken;
         delete ret.resetPasswordExpires;
+        ret.avatarUrl = normalizeAvatarUrl(ret.avatarUrl);
         return ret;
       },
     },
@@ -67,6 +77,11 @@ userSchema.pre('save', async function (next) {
   } catch (error) {
     next(error);
   }
+});
+
+userSchema.pre('save', function (next) {
+  this.avatarUrl = normalizeAvatarUrl(this.avatarUrl);
+  next();
 });
 
 // Phương thức kiểm tra mật khẩu

@@ -17,7 +17,7 @@ const lickSchema = new mongoose.Schema(
     tempo: { type: Number },
     status: {
       type: String,
-      enum: ["draft", "active", "inactive"],
+      enum: ["draft", "active", "inactive", "pending"],
       default: "draft",
       required: true,
     },
@@ -25,7 +25,7 @@ const lickSchema = new mongoose.Schema(
       type: String,
       enum: ["beginner", "intermediate", "advanced"],
     },
-    isPublic: { type: Boolean, default: true, required: true },
+    isPublic: { type: Boolean, default: false, required: true },
     isFeatured: { type: Boolean, default: false, required: true },
   },
   { timestamps: true }
