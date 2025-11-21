@@ -41,12 +41,24 @@ export const nodeMediaServer = () => {
         {
           app: 'live',
           hls: true,
-          // Cấu hình HLS cho livestream (không phải VOD)
-          // hls_time=2: Mỗi segment 2 giây
-          // hls_list_size=10: Giữ 10 segments (~20 giây buffer)
-          // hls_flags=delete_segments+append_list: Xóa segments cũ nhưng giữ playlist
           hlsFlags: '[hls_time=2:hls_list_size=10:hls_flags=delete_segments+append_list]',
-          hlsKeep: true, // Giữ segments trong lúc live, xóa sau khi donePublish
+          hlsKeep: true, 
+          vc: "libx264", 
+          vcParam: [
+            "-preset", "veryfast",       // Xử lý nhanh để không trễ
+            "-tune", "zerolatency",      // Tối ưu cho live
+            "-b:v", "2500k",             // GIỚI HẠN Bitrate video ở mức 2.5Mbps (An toàn cho GCS)
+            "-maxrate", "3000k",         // Không bao giờ vượt quá 3Mbps
+            "-bufsize", "6000k",
+            "-g", "60",                  // Keyframe mỗi 2 giây (nếu fps=30) - Bắt buộc cho HLS mượt
+            "-sc_threshold", "0",        // Không tự ý chèn keyframe linh tinh
+            "-profile:v", "main",        // Profile chuẩn cho mọi thiết bị
+            "-pix_fmt", "yuv420p"        // Màu chuẩn, tránh lỗi đen màn hình trên VLC
+          ],
+          
+          // 2. Ép chuyển mã lại âm thanh
+          ac: "aac",
+          acParam: ["-ab", "128k", "-ac", "2", "-ar", "44100"],
           dash: false
         }
       ]
