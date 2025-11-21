@@ -14,6 +14,7 @@ const roomViewers = new Map();
 export const socketServer = (httpServer) => {
   const originsEnv = process.env.CORS_ORIGINS || process.env.CLIENT_ORIGIN || '*';
   const allowedOrigins = originsEnv.split(',').map((o) => o.trim()).filter(Boolean);
+  console.log('[Socket.IO] Allowed CORS origins:', allowedOrigins.length ? allowedOrigins : ['*']);
 
   io = new Server(httpServer, {
     cors: {
@@ -23,7 +24,7 @@ export const socketServer = (httpServer) => {
     }
   });
 
-  const pubClient = createClient({ 
+const pubClient = createClient({ 
     url: process.env.REDIS_URL || ""
   });
   const subClient = pubClient.duplicate();
@@ -32,6 +33,14 @@ export const socketServer = (httpServer) => {
     console.log('[Socket.IO] Đã kết nối Redis Adapter thành công');
   }).catch((err) => {
     console.error('[Socket.IO] Lỗi kết nối Redis:', err);
+  });
+
+  io.engine.on('connection_error', (err) => {
+    console.error('[Socket.IO] connection_error:', {
+      code: err.code,
+      message: err.message,
+      context: err.context,
+    });
   });
 
   io.on('connection', (socket) => {
@@ -46,7 +55,7 @@ export const socketServer = (httpServer) => {
       socket.join(roomId);
       console.log(`[Socket.IO] Client ${socket.id} (user: ${tempUserId}) đã tham gia phòng ${roomId}`);
       
-      // Track viewer (exclude host)
+      // Track viewer (exclude host) - only for LiveRooms, not posts
       if (tempUserId && roomId && !roomId.startsWith('post:')) {
         socket.currentRoomId = roomId; // Store for disconnect
         

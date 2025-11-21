@@ -1,9 +1,11 @@
+// authController.js
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import sendMail from './sendMail.js';
 import { validationResult } from 'express-validator';
 import crypto from 'crypto';
+import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../constants/userConstants.js';
 import { createAccessToken, createRefreshToken } from '../utils/jwt.js';
 
 // Generate access and refresh tokens
@@ -69,24 +71,26 @@ const sendOTPEmail = async (email, otp) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     // Kiểm tra thông tin đăng nhập
-    const user = await User.findOne({ email }).select('+passwordHash');
-    
+    // ⭐ LƯU Ý: User.findOne({ email }).select('+passwordHash')
+    // Nếu bạn muốn lấy 'permissions', nó phải được Mongoose trả về.
+    const user = await User.findOne({ email }).select('+passwordHash +permissions'); // ⭐ THÊM +permissions
+
     // Kiểm tra xem tài khoản có tồn tại không
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Email hoặc mật khẩu không đúng' 
+        message: 'Email hoặc mật khẩu không đúng'
       });
     }
 
     // Kiểm tra mật khẩu
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Email hoặc mật khẩu không đúng' 
+        message: 'Email hoặc mật khẩu không đúng'
       });
     }
 
@@ -99,7 +103,7 @@ export const login = async (req, res) => {
         email: user.email
       });
     }
-
+    console.log('User Permissions after Mongoose query:', user.permissions);
     const { accessToken, refreshToken } = await generateTokens(user);
 
     // Set refresh token vào httpOnly cookie
@@ -122,7 +126,9 @@ export const login = async (req, res) => {
         username: user.username,
         displayName: user.displayName,
         roleId: user.roleId,
-        verifiedEmail: user.verifiedEmail
+        verifiedEmail: user.verifiedEmail,
+        permissions: user.permissions || [], // ⭐ THÊM permissions
+        avatarUrl: normalizeAvatarUrl(user.avatarUrl)
       }
     });
   } catch (error) {
@@ -143,7 +149,7 @@ export const refreshToken = async (req, res) => {
     }
 
     // Tìm user có refresh token này
-    const user = await User.findOne({ refreshToken: refreshToken }).select('+refreshToken');
+    const user = await User.findOne({ refreshToken: refreshToken }).select('+refreshToken +permissions'); // ⭐ THÊM +permissions
     if (!user) {
       return res.status(403).json({ message: 'Refresh token không hợp lệ' });
     }
@@ -154,19 +160,18 @@ export const refreshToken = async (req, res) => {
         return res.status(403).json({ message: 'Refresh token không hợp lệ hoặc đã hết hạn' });
       }
 
-      // Tạo access token mới (15 minutes - sử dụng utility function)
+
       const accessToken = createAccessToken({
         userId: user._id,
         email: user.email,
         roleId: user.roleId
       });
 
-      // Tạo refresh token mới luôn để tăng bảo mật (rotation)
       const newRefreshToken = createRefreshToken({
         userId: user._id
       });
 
-      // Cập nhật refresh token mới vào database
+
       user.refreshToken = newRefreshToken;
       await user.save();
 
@@ -177,17 +182,17 @@ export const refreshToken = async (req, res) => {
         sameSite: 'Lax',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 ngày
       });
-
       res.json({
         token: accessToken,
-        refreshToken: newRefreshToken,
         user: {
           id: user._id,
           email: user.email,
           username: user.username,
           displayName: user.displayName,
           roleId: user.roleId,
-          verifiedEmail: user.verifiedEmail
+          verifiedEmail: user.verifiedEmail,
+          permissions: user.permissions || [], // ⭐ THÊM permissions
+          avatarUrl: normalizeAvatarUrl(user.avatarUrl)
         }
       });
     });
@@ -202,14 +207,14 @@ export const logout = async (req, res) => {
   try {
     // Lấy refresh token từ cookie
     const refreshToken = req.cookies.refreshToken;
-    
+
     if (!refreshToken) {
       return res.status(200).json({ message: 'Đăng xuất thành công' });
     }
 
     // Tìm user có refresh token này
     const user = await User.findOne({ refreshToken });
-    
+
     // Nếu tìm thấy user, xóa refresh token
     if (user) {
       user.refreshToken = undefined;
@@ -314,7 +319,9 @@ export const verifyEmail = async (req, res) => {
         username: user.username,
         displayName: user.displayName,
         roleId: user.roleId,
-        verifiedEmail: true
+        verifiedEmail: true,
+        permissions: user.permissions || [], // ⭐ THÊM permissions
+        avatarUrl: normalizeAvatarUrl(user.avatarUrl)
       }
     });
 
@@ -396,7 +403,52 @@ export const register = async (req, res) => {
       });
     }
 
-    const { fullName, email, password, birthday } = req.body;
+    const {
+      fullName,
+      email,
+      password,
+      birthday,
+      gender,
+      addressLine,
+      provinceCode,
+      provinceName,
+      districtCode,
+      districtName,
+      wardCode,
+      wardName
+    } = req.body;
+
+    const normalizedGender = gender?.toLowerCase();
+    const allowedGenders = ['male', 'female', 'other'];
+    if (!allowedGenders.includes(normalizedGender)) {
+      return res.status(400).json({
+        message: 'Giới tính không hợp lệ'
+      });
+    }
+
+    const requiredAddressFields = [
+      { value: addressLine, message: 'Địa chỉ chi tiết không được để trống' },
+      { value: provinceCode, message: 'Vui lòng chọn tỉnh/thành phố' },
+      { value: provinceName, message: 'Vui lòng chọn tỉnh/thành phố' },
+      { value: districtCode, message: 'Vui lòng chọn quận/huyện' },
+      { value: districtName, message: 'Vui lòng chọn quận/huyện' },
+      { value: wardCode, message: 'Vui lòng chọn phường/xã' },
+      { value: wardName, message: 'Vui lòng chọn phường/xã' }
+    ];
+
+    for (const field of requiredAddressFields) {
+      if (!field.value || (typeof field.value === 'string' && !field.value.trim())) {
+        return res.status(400).json({ message: field.message });
+      }
+    }
+
+    const normalizedAddressLine = addressLine.trim();
+    const fullLocation = [
+      normalizedAddressLine,
+      wardName.trim(),
+      districtName.trim(),
+      provinceName.trim()
+    ].filter(Boolean).join(', ');
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -431,11 +483,21 @@ export const register = async (req, res) => {
       username,
       displayName: fullName,
       birthday: birthday ? new Date(birthday) : null,
+      gender: normalizedGender,
+      addressLine: normalizedAddressLine,
+      provinceCode: provinceCode.toString(),
+      provinceName: provinceName.trim(),
+      districtCode: districtCode.toString(),
+      districtName: districtName.trim(),
+      wardCode: wardCode.toString(),
+      wardName: wardName.trim(),
+      location: fullLocation,
       otp,
       otpExpires,
       verifiedEmail: false,
       roleId: 'user',
-      isActive: true
+      isActive: true,
+      avatarUrl: DEFAULT_AVATAR_URL
     });
 
     // First save the user to get _id
@@ -455,7 +517,17 @@ export const register = async (req, res) => {
         username: newUser.username,
         displayName: newUser.displayName,
         roleId: newUser.roleId,
-        verifiedEmail: newUser.verifiedEmail
+        verifiedEmail: newUser.verifiedEmail,
+        avatarUrl: DEFAULT_AVATAR_URL,
+        gender: newUser.gender,
+        addressLine: newUser.addressLine,
+        provinceCode: newUser.provinceCode,
+        provinceName: newUser.provinceName,
+        districtCode: newUser.districtCode,
+        districtName: newUser.districtName,
+        wardCode: newUser.wardCode,
+        wardName: newUser.wardName,
+        location: newUser.location
       },
       requiresVerification: true
     });
@@ -505,7 +577,7 @@ const sendResetPasswordEmail = async (email, resetToken) => {
 
   try {
     // Assume 'sendMail' is an existing function to send the email
-    const result = await sendMail({ email, subject, html }); 
+    const result = await sendMail({ email, subject, html });
     if (result.success) {
       console.log('Reset password email sent successfully');
       return true;
@@ -532,11 +604,11 @@ export const forgotPassword = async (req, res) => {
     // Find user by email
     // Assume 'User' is your Mongoose/database model
     const user = await User.findOne({ email });
-    
+
     // Always return success to prevent email enumeration attack
     if (!user) {
-      return res.status(200).json({ 
-        message: 'If the email exists, we have sent password reset instructions' 
+      return res.status(200).json({
+        message: 'If the email exists, we have sent password reset instructions'
       });
     }
 
@@ -544,7 +616,7 @@ export const forgotPassword = async (req, res) => {
     const resetToken = generateResetToken();
     const resetTokenExpiry = Date.now() + 3600000; // 1 hour (3600000 ms) from now
 
-    // Save reset token to user
+    // Save reset token
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = resetTokenExpiry;
     await user.save();
@@ -552,8 +624,8 @@ export const forgotPassword = async (req, res) => {
     // Send reset password email
     await sendResetPasswordEmail(user.email, resetToken);
 
-    res.status(200).json({ 
-      message: 'If the email exists, we have sent password reset instructions' 
+    res.status(200).json({
+      message: 'If the email exists, we have sent password reset instructions'
     });
   } catch (error) {
     console.error('Error in forgotPassword:', error);
@@ -569,21 +641,21 @@ export const resetPassword = async (req, res) => {
 
     // Validate input
     if (!token || !email || !newPassword) {
-      return res.status(400).json({ 
-        message: 'Missing required information' 
+      return res.status(400).json({
+        message: 'Missing required information'
       });
     }
 
     // Find user by email, matching token, and checking expiration
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       email,
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() } // Check if token is not expired
     });
 
     if (!user) {
-      return res.status(400).json({ 
-        message: 'Invalid or expired password reset link' 
+      return res.status(400).json({
+        message: 'Invalid or expired password reset link'
       });
     }
 
@@ -596,11 +668,11 @@ export const resetPassword = async (req, res) => {
     user.passwordHash = passwordHash; // Assuming your user model uses 'passwordHash'
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
-    
+
     await user.save();
 
-    res.status(200).json({ 
-      message: 'Password reset successful. You can now log in with your new password.' 
+    res.status(200).json({
+      message: 'Password reset successful. You can now log in with your new password.'
     });
   } catch (error) {
     console.error('Error in resetPassword:', error);

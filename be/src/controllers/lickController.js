@@ -930,8 +930,8 @@ export const createLick = async (req, res) => {
       key,
       tempo,
       difficulty,
-      isPublic,
-      status,
+      // isPublic,
+      // status,
       isFeatured,
     } = req.body;
     const userId = req.userId || req.user?.id; // authoritative user id from JWT
@@ -970,9 +970,9 @@ export const createLick = async (req, res) => {
       key,
       tempo,
       difficulty,
-      status: status || "draft", // Default to 'draft' if not provided
-      isPublic: isPublic === "true", // Convert from string
-      isFeatured: isFeatured === "true" || false, // Convert from string, default to false
+      status: "pending", // Default to 'draft' if not provided
+      isPublic: "false", // Convert from string
+      isFeatured: "true", // Convert from string, default to false
     });
 
     await newLick.save();

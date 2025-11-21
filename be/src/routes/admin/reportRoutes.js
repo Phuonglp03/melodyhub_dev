@@ -1,6 +1,6 @@
 import express from 'express';
-import { reportPost, getPostReports, checkPostReport, getAllReports, adminRestorePost, adminDeletePost } from '../controllers/reportController.js';
-import { verifyToken, isAdmin } from '../middleware/auth.js';
+import { reportPost, getPostReports, checkPostReport, getAllReports, adminRestorePost, adminDeletePost } from '../../controllers/admin/reportController.js';
+import { verifyToken, isAdmin } from '../../middleware/auth.js';
 
 const router = express.Router();
 

@@ -51,12 +51,15 @@ import userRoutes from "./routes/userRoutes.js";
 import tagRoutes from "./routes/tagRoutes.js";
 import playlistRoutes from "./routes/playlistRoutes.js";
 import projectRoutes from "./routes/projectRoutes.js";
+import locationRoutes from "./routes/locationRoutes.js";
 
+import userManageRoute from "./routes/admin/userManageRoute.js";
+import createAdminRoute from "./routes/admin/createAdminRoute.js";
 import liveroomRoutes from "./routes/user/liveroomRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import dmRoutes from "./routes/dmRoutes.js";
-import reportRoutes from "./routes/reportRoutes.js";
-
+import reportRoutes from "./routes/admin/reportRoutes.js";
+import approveLickRoute from "./routes/admin/approveLickRoute.js";
 const app = express();
 const httpServer = http.createServer(app);
 
@@ -98,6 +101,7 @@ app.get("/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
+app.use("/api/licks", approveLickRoute);
 app.use("/api/licks", lickRoutes);
 app.use("/api/livestreams", liveroomRoutes);
 app.use("/api/notifications", notificationRoutes);
@@ -106,7 +110,10 @@ app.use("/api/tags", tagRoutes);
 app.use("/api/playlists", playlistRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/locations", locationRoutes);
 
+app.use('/api/admin', userManageRoute);
+app.use('/api/admin', createAdminRoute);
 // 404 handler - must be after all routes
 app.use((req, res, next) => {
   res.status(404).json({
