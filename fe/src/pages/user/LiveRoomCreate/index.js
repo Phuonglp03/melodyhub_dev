@@ -11,951 +11,329 @@ import {
 } from '../../../services/user/socketService';
 import videojs from 'video.js';
 import '../../../../node_modules/video.js/dist/video-js.css';
-import { Select, Button } from 'antd';
-import EmojiPicker from 'emoji-picker-react';
+import { 
+  Button, Input, Select, Form, Card, Typography, 
+  Alert, Spin, Modal, Tooltip, message 
+} from 'antd';
+import { 
+  CopyOutlined, EyeOutlined, EyeInvisibleOutlined, 
+  VideoCameraOutlined, SettingOutlined, ArrowLeftOutlined 
+} from '@ant-design/icons';
 import { useSelector } from 'react-redux';
-import { SmileOutlined } from '@ant-design/icons';
 import LiveVideo from '../../../components/LiveVideo';
 
+const { Title, Text, Paragraph } = Typography;
+const { Option } = Select;
+const { TextArea } = Input;
 
 const LiveStreamCreate = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
 
+  // State
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const [hasTitle, setHasTitle] = useState(false);
   const [isPreviewReady, setIsPreviewReady] = useState(false);
-
-  const [showEditPopup, setShowEditPopup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [privacy, setPrivacy] = useState('public');
-  const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
-  const [showStreamKey, setShowStreamKey] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [descriptionText, setDescriptionText] = useState('');
-  const [copiedField, setCopiedField] = useState(''); // 'rtmp', 'key', or ''
   
-  // Video.js refs
+  // Edit Form
+  const [form] = Form.useForm();
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+
+  // Keys Visibility
+  const [showStreamKey, setShowStreamKey] = useState(false);
+
+  // Video Refs
   const videoRef = useRef(null);
   const playerRef = useRef(null);
-  const retryIntervalRef = useRef(null);
-  
+
+  // --- INIT & SOCKET ---
   useEffect(() => {
     initSocket();
 
     const fetchRoom = async () => {
       try {
         const roomData = await livestreamService.getLiveStreamById(roomId);
-        const currentUserId = user?.user?.id  || user?.user?._id;
-        const hostId = roomData.hostId?._id;
-
-        if (hostId !== currentUserId) {
-          setError("Bạn không có quyền truy cập vào trang này.");
-          setLoading(false);
-          return; 
+        const currentUserId = user?.user?.id || user?.user?._id;
+        
+        if (roomData.hostId?._id !== currentUserId) {
+          setError("Bạn không có quyền truy cập trang này.");
+          setLoading(false); return;
         }
         if (roomData.status === 'live') {
-          navigate(`/livestream/live/${roomId}`);
-          return;
-        }
-        if (roomData.status === 'ended') {
-          navigate('/');
-          return;
+          navigate(`/livestream/live/${roomId}`); return;
         }
 
         setRoom(roomData);
-        setHasTitle(!!roomData.title);
         setIsPreviewReady(roomData.status === 'preview');
-        setPrivacy(roomData.privacyType);
+        
+        // Pre-fill form
+        form.setFieldsValue({
+          title: roomData.title,
+          description: roomData.description,
+          privacyType: roomData.privacyType
+        });
+        
         setLoading(false);
       } catch (err) {
-        setError('Không tìm thấy phòng live.');
+        setError('Không thể tải thông tin phòng.');
         setLoading(false);
       }
     };
 
     fetchRoom();
 
-    // Lắng nghe tín hiệu OBS từ NMS
-    onStreamPreviewReady((roomDataFromServer) => {
-      console.log('[Socket] Tín hiệu OBS đã sẵn sàng!', roomDataFromServer);
+    // Socket Listeners
+    onStreamPreviewReady((data) => {
+      message.success('Đã nhận tín hiệu từ OBS!');
       setIsPreviewReady(true);
-      setRoom(roomDataFromServer);
-      setPrivacy(roomDataFromServer.privacyType);
+      setRoom(data);
     });
 
     onStreamPrivacyUpdated((data) => {
-      console.log('[Socket] Cập nhật privacy:', data.privacyType);
-      setPrivacy(data.privacyType);
-      setRoom(prev => prev ? ({ ...prev, privacyType: data.privacyType }) : null);
+      setRoom(prev => ({ ...prev, privacyType: data.privacyType }));
+      form.setFieldsValue({ privacyType: data.privacyType });
     });
 
     return () => {
       offSocketEvents();
       disconnectSocket();
-      // Cleanup Video.js player
-      if (playerRef.current) {
-        playerRef.current.dispose();
-        playerRef.current = null;
-      }
+      if (playerRef.current) playerRef.current.dispose();
     };
-  }, [roomId, navigate, user?.user?.id]);
+  }, [roomId, navigate, user, form]);
 
-  // Initialize Video.js player when preview is ready
+  // --- VIDEO PLAYER ---
   useEffect(() => {
     if (isPreviewReady && room?.playbackUrls?.hls && videoRef.current && !playerRef.current) {
       const player = videojs(videoRef.current, {
         autoplay: true,
         muted: true,
         controls: true,
-        fluid: false,
-        fill: true,
+        fluid: true,
         liveui: true,
-        // CẤU HÌNH LIVE TRACKER MỚI:
-        liveTracker: {
-          trackingThreshold: 15, // Giảm xuống để sát hơn
-          liveTolerance: 10,     // Chấp nhận độ lệch 10s
-        },
-        controlBar: {
-          progressControl: false, // ✅ Ẩn progress bar như host
-          currentTimeDisplay: false,
-          timeDivider: false,
-          durationDisplay: false,
-          remainingTimeDisplay: false,
-          seekToLive: true // Hiện nút "LIVE"
-        },
         html5: {
           vhs: {
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
             overrideNative: true,
-            
-            // --- CẤU HÌNH QUAN TRỌNG ĐỂ KHẮC PHỤC LỖI 404/DECODE ---
-            
-            // 1. Tự động thử lại khi lỗi (Thay vì sập luôn)
-            // Cho phép reload playlist nếu gặp lỗi tải segment
-            playlistRetryCount: 3,     
-            playlistRetryDelay: 500,   // Thử lại sau 0.5s
-            
-            // 2. Cấu hình bộ đệm (Buffer)
-            // Giữ buffer thấp để giảm độ trễ (nhưng rủi ro hơn)
-            bufferBasedBitrateSelection: true,
-            
-            // 3. Xử lý Live Sync (Đồng bộ)
-            // Nếu bạn muốn sát nhất, hãy để số thấp (ví dụ 2), 
-            // NHƯNG nếu mạng GCS chậm, nó sẽ gây lỗi. 
-            // Con số 3 là mức "An toàn tối thiểu". Đừng để thấp hơn.
-            liveSyncDurationCount: 2, 
-            
-            // Cho phép player rượt đuổi nếu bị tụt lại quá xa (15s)
-            liveMaxLatencyDurationCount: 10, 
-          },
-          nativeAudioTracks: false,
-          nativeVideoTracks: false
+            liveSyncDurationCount: 3,
+          }
         }
       });
-
-      player.src({
-        src: room.playbackUrls.hls,
-        type: 'application/x-mpegURL'
-      });
-
+      player.src({ src: room.playbackUrls.hls, type: 'application/x-mpegURL' });
       playerRef.current = player;
-
-      player.on('error', () => {
-        console.error('Video.js error:', player.error());
-      });
-
-      player.on('loadedmetadata', () => {
-        console.log('[Video.js] Metadata loaded');
-      });
-
-      player.on('canplay', () => {
-        console.log('[Video.js] Can play');
-        player.play().catch(e => {
-          console.error('[Video.js] Play error:', e);
-        });
-      });
     }
-
-    return () => {
-      if (playerRef.current && !isPreviewReady) {
-        playerRef.current.dispose();
-        playerRef.current = null;
-      }
-    };
   }, [isPreviewReady, room]);
 
-  const handlePrivacyChange = async (newPrivacy) => {
-    setIsUpdatingPrivacy(true);
-    try {
-      await livestreamService.updatePrivacy(roomId, newPrivacy);
-      setPrivacy(newPrivacy);
-    } catch (err) {
-      console.error('Lỗi đổi privacy:', err);
-      setPrivacy(room.privacyType);
-    } finally {
-      setIsUpdatingPrivacy(false);
-    }
-  };
-
-  const handleUpdateDetails = async ({ title, description }) => {
+  // --- HANDLERS ---
+  const handleUpdateInfo = async (values) => {
     setIsSubmitting(true);
     try {
-      const { details } = await livestreamService.updateLiveStreamDetails(roomId, { title, description });
-      setRoom(prev => ({ ...prev, title: details.title, description: details.description }));
-      setHasTitle(!!details.title);
-      setShowEditPopup(false);
+      const { details } = await livestreamService.updateLiveStreamDetails(roomId, {
+        title: values.title,
+        description: values.description
+      });
+      
+      if (values.privacyType !== room.privacyType) {
+        await livestreamService.updatePrivacy(roomId, values.privacyType);
+      }
+
+      setRoom(prev => ({ 
+        ...prev, 
+        title: details.title, 
+        description: details.description,
+        privacyType: values.privacyType
+      }));
+      
+      message.success('Cập nhật thông tin thành công');
+      setIsEditModalVisible(false);
     } catch (err) {
-      console.error("Lỗi cập nhật:", err);
+      message.error('Lỗi cập nhật thông tin');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleGoLive = async () => {
-    if (!hasTitle || !isPreviewReady) {
-      alert("Cần có tiêu đề và kết nối OBS để bắt đầu!");
-      return;
+    if (!room.title) {
+      return message.warning('Vui lòng nhập tiêu đề trước khi phát live.');
     }
+    if (!isPreviewReady) {
+      return message.warning('Chưa nhận được tín hiệu từ OBS.');
+    }
+
     setIsSubmitting(true);
     try {
       await livestreamService.goLive(roomId);
+      message.success('Đang phát trực tiếp!');
       navigate(`/livestream/live/${roomId}`);
     } catch (err) {
-      console.error("Lỗi khi Go Live:", err);
-      alert(err.response?.data?.message || 'Không thể phát trực tiếp.');
+      message.error(err.response?.data?.message || 'Không thể phát trực tiếp.');
       setIsSubmitting(false);
     }
   };
 
-  const handleOpenEditPopup = () => {
-    setDescriptionText(room.description || '');
-    setShowEmojiPicker(false);
-    setShowEditPopup(true);
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text);
+    message.success(`Đã sao chép ${label}`);
   };
 
-  const handleReloadPlayer = () => {
-    if (playerRef.current) {
-      playerRef.current.dispose();
-      playerRef.current = null;
-    }
-    
-    // Re-initialize player
-    if (room?.playbackUrls?.hls && videoRef.current) {
-      const player = videojs(videoRef.current, {
-        autoplay: true,
-        muted: true,
-        controls: true,
-        fluid: false,
-        fill: true,
-        liveui: true,
-        // CẤU HÌNH LIVE TRACKER MỚI:
-        liveTracker: {
-          trackingThreshold: 15, // Giảm xuống để sát hơn
-          liveTolerance: 10,     // Chấp nhận độ lệch 10s
-        },
-        controlBar: {
-          progressControl: false, // ✅ Ẩn progress bar như host
-          currentTimeDisplay: false,
-          timeDivider: false,
-          durationDisplay: false,
-          remainingTimeDisplay: false,
-          seekToLive: true // Hiện nút "LIVE"
-        },
-        html5: {
-          vhs: {
-            enableLowInitialPlaylist: true,
-            smoothQualityChange: true,
-            overrideNative: true,
-            
-            // --- CẤU HÌNH QUAN TRỌNG ĐỂ KHẮC PHỤC LỖI 404/DECODE ---
-            
-            // 1. Tự động thử lại khi lỗi (Thay vì sập luôn)
-            // Cho phép reload playlist nếu gặp lỗi tải segment
-            playlistRetryCount: 3,     
-            playlistRetryDelay: 500,   // Thử lại sau 0.5s
-            
-            // 2. Cấu hình bộ đệm (Buffer)
-            // Giữ buffer thấp để giảm độ trễ (nhưng rủi ro hơn)
-            bufferBasedBitrateSelection: true,
-            
-            // 3. Xử lý Live Sync (Đồng bộ)
-            // Nếu bạn muốn sát nhất, hãy để số thấp (ví dụ 2), 
-            // NHƯNG nếu mạng GCS chậm, nó sẽ gây lỗi. 
-            // Con số 3 là mức "An toàn tối thiểu". Đừng để thấp hơn.
-            liveSyncDurationCount: 2, 
-            
-            // Cho phép player rượt đuổi nếu bị tụt lại quá xa (15s)
-            liveMaxLatencyDurationCount: 10, 
-          },
-          nativeAudioTracks: false,
-          nativeVideoTracks: false
-        }
-      });
-
-      player.src({
-        src: room.playbackUrls.hls,
-        type: 'application/x-mpegURL'
-      });
-
-      playerRef.current = player;
-    }
-  };
-
-  if (loading) return <div style={{ color: 'white' }}>Đang tải thông tin phòng...</div>;
-  if (error) return <div style={{ color: 'red' }}>{error}</div>;
-  if (!room) return null;
-
-  const isGoLiveDisabled = !hasTitle || !isPreviewReady || isSubmitting;
-  const previewUrl = room.playbackUrls?.hls;
+  if (loading) return <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', background:'#141414'}}><Spin size="large" /></div>;
+  if (error) return <div style={{padding:'50px', textAlign:'center', color:'red'}}>{error}</div>;
 
   return (
-    <div style={{ 
-      minHeight: '50vh', 
-      background: '#18191a', 
-      color: 'white',
-      padding: '0'
-    }}>
-      <div style={{ 
-        display: 'flex', 
-        gap: '0',
-        height: 'calc(100vh - 60px)'
-      }}>
-        {/* Left Panel */}
-        <div style={{ 
-          width: 'calc(100vw - 80vw)',
-          height: '100%',
-          background: '#242526',
-          borderRight: '1px solid #3a3b3c',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          <div style={{ 
-            padding: '16px 24px'
-          }}>
-            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>Tạo video trực tiếp</h2>
-          </div>
-          
-          <div style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                background: '#3a3b3c',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '18px'
-              }}>👤</div>
-              <div>
-                <div style={{ fontSize: '15px', fontWeight: '600' }}>
-                  {room.hostId?.username || 'Melodyhub'}
-                </div>
-                <div style={{ fontSize: '13px', color: '#b0b3b8' }}>Người tổ chức</div>
-              </div>
-            </div>
-
-            {/* Privacy Dropdown */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ 
-                fontSize: '13px', 
-                color: '#b0b3b8',
-                display: 'block',
-                marginBottom: '8px'
-              }}>
-                Quyền riêng tư trực tiếp video
-              </label>
-              <Select
-                value={privacy}
-                onChange={handlePrivacyChange}
-                loading={isUpdatingPrivacy}
-                disabled={isUpdatingPrivacy}
-                style={{ width: '100%' }}
-                size="large"
-              >
-                <Select.Option value="public">Công khai</Select.Option>
-                <Select.Option value="follow_only">Chỉ người theo dõi</Select.Option>
-              </Select>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div style={{ 
-            marginTop: 'auto',
-            padding: '20px',
-            display: 'flex',
-            gap: '12px'
-          }}>
-            <button 
-              onClick={() => navigate('/')}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                background: '#3a3b3c',
-                border: 'none',
-                borderRadius: '6px',
-                color: '#e4e6eb',
-                fontSize: '15px',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              Quay lại
-            </button>
-            <button 
-              onClick={handleGoLive}
-              disabled={isGoLiveDisabled}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                background: isGoLiveDisabled ? '#4a4a4a' : '#e4e6eb',
-                border: 'none',
-                borderRadius: '6px',
-                color: isGoLiveDisabled ? '#6a6a6a' : '#000',
-                fontSize: '15px',
-                fontWeight: '600',
-                cursor: isGoLiveDisabled ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isSubmitting ? 'Đang xử lý...' : 'Phát trực tiếp'}
-            </button>
-          </div>
+    <div style={{ minHeight: '100vh', background: '#141414', color: '#fff', padding: '20px' }}>
+      
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <Button icon={<ArrowLeftOutlined />} type="text" style={{color:'white'}} onClick={() => navigate('/')} />
+          <Title level={3} style={{ color: '#fff', margin: 0 }}>Thiết lập Livestream</Title>
         </div>
-
-        {/* Right Panel */}
-        <div style={{ 
-          flex: 1,
-          background: '#18191a',
-          overflowY: 'auto',
-          padding: '20px'
-        }}>
-          {/* Video Preview */}
-          <div style={{ 
-            background: '#8b9298',
-            borderRadius: '8px',
-            width: '85%',
-            minWidth: '200px',
-            aspectRatio: '16/9',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '20px',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            {!isPreviewReady ? (
-              <div style={{ textAlign: 'center', color: '#242526' }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>🔹</div>
-                <p style={{ margin: 0, fontSize: '15px' }}>Đang chờ tín hiệu từ OBS...</p>
-              </div>
-            ) : previewUrl ? (
-              <>
-                <div data-vjs-player style={{ width: '100%', height: '100%' }}>
-                  <video
-                    ref={videoRef}
-                    className="video-js vjs-big-play-centered"
-                    style={{ width: '100%', height: '100%' }}
-                  />
-                </div>
-                {playerRef.current && <LiveVideo player={playerRef.current} />}
-              </>
-            ) : (
-              <div style={{ textAlign: 'center', color: '#242526' }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>🔹</div>
-                <p style={{ margin: 0, fontSize: '15px' }}>Kết nối phần mềm phát trực tiếp để tăng sáng</p>
-              </div>
-            )}
-          </div>
-
-          {!isPreviewReady && (
-            <Button
-              onClick={handleReloadPlayer}
-              style={{
-                marginTop: '12px',
-                background: '#3a3b3c',
-                color: '#e4e6eb',
-                border: 'none'
-              }}
-            >
-              Không thấy video? Tải lại trình phát
-            </Button>
-          )}
-
-          {/* Bottom Sections */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-            {/* Video Source Section */}
-            <div style={{ 
-              flex: 1,
-              background: '#242526',
-              borderRadius: '8px',
-              padding: '20px'
-            }}>
-              <div style={{ 
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '12px'
-              }}>
-                <div style={{
-                  fontSize: '12px',
-                  color: '#b0b3b8',
-                  marginTop: '4px'
-                }}>ⓘ</div>
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ 
-                    margin: '0 0 12px 0',
-                    fontSize: '17px',
-                    fontWeight: '600'
-                  }}>Chọn nguồn video</h3>
-                  <div style={{
-                    background: '#18191a',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      margin: '0 auto 12px',
-                      background: '#0084ff',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '24px'
-                    }}>✓</div>
-                    <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '8px' }}>
-                      Phần mềm phát trực tiếp
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#b0b3b8', lineHeight: '1.5' }}>
-                      Các buổi phát trực tiếp xem trước phần mềm phát trực tiếp bạn đang sử dụng.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Stream Setup Section */}
-            <div style={{ 
-              flex: 1,
-              background: '#242526',
-              borderRadius: '8px',
-              padding: '20px'
-            }}>
-              <h3 style={{ 
-                margin: '0 0 12px 0',
-                fontSize: '17px',
-                fontWeight: '600',
-                color: '#e4e6eb'
-              }}>Thiết lập phần mềm phát trực tiếp</h3>
-              <div style={{ 
-                fontSize: '13px',
-                color: '#ff6b6b',
-                marginBottom: '16px',
-                lineHeight: '1.5'
-              }}>
-                Sao chép và dán URL máy chủ và khóa luồng vào phần mềm phát trực tiếp (OBS, Streamlabs...).
-              </div>
-              
-              {/* RTMP Server URL */}
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ 
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  color: '#e4e6eb',
-                  display: 'block',
-                  marginBottom: '8px'
-                }}>URL máy chủ (RTMP)</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input 
-                    type="text"
-                    readOnly 
-                    value={room.rtmpUrl }
-                    style={{ 
-                      flex: 1,
-                      padding: '8px 12px',
-                      background: '#3a3b3c',
-                      border: '1px solid #4a4b4c',
-                      borderRadius: '6px',
-                      color: '#e4e6eb',
-                      fontSize: '13px'
-                    }} 
-                  />
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(room.rtmpUrl || 'rtmp://api.melodyhub.online:1935/live');
-                      setCopiedField('rtmp');
-                      setTimeout(() => setCopiedField(''), 2000);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      background: copiedField === 'rtmp' ? '#10b981' : '#0084ff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: 'white',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'background 0.2s'
-                    }}
-                  >
-                    {copiedField === 'rtmp' ? '✓ Đã sao' : 'Sao chép'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Stream Key */}
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ 
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  color: '#e4e6eb',
-                  display: 'block',
-                  marginBottom: '8px'
-                }}>Khóa luồng (Stream Key)</label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ 
-                    flex: 1,
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}>
-                    <input 
-                      type={showStreamKey ? "text" : "password"}
-                      readOnly 
-                      value={room.streamKey}
-                      style={{ 
-                        width: '100%',
-                        padding: '8px 40px 8px 12px',
-                        background: '#3a3b3c',
-                        border: '1px solid #4a4b4c',
-                        borderRadius: '6px',
-                        color: '#e4e6eb',
-                        fontSize: '13px'
-                      }} 
-                    />
-                    <button
-                      onClick={() => setShowStreamKey(!showStreamKey)}
-                      style={{
-                        position: 'absolute',
-                        right: '8px',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        padding: '4px',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title={showStreamKey ? "Ẩn khóa" : "Hiện khóa"}
-                    >
-                      {showStreamKey ? '👁️' : '👁️‍🗨️'}
-                    </button>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(room.streamKey);
-                      setCopiedField('key');
-                      setTimeout(() => setCopiedField(''), 2000);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      background: copiedField === 'key' ? '#10b981' : '#0084ff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: 'white',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'background 0.2s'
-                    }}
-                  >
-                    {copiedField === 'key' ? '✓ Đã sao' : 'Sao chép'}
-                  </button>
-                </div>
-              </div>
-              
-              <div style={{ 
-                fontSize: '12px', 
-                color: '#b0b3b8', 
-                marginTop: '12px',
-                padding: '12px',
-                background: '#3a3b3c',
-                borderRadius: '6px',
-                borderLeft: '3px solid #ff6b6b'
-              }}>
-                <div style={{ fontWeight: '600', marginBottom: '6px', color: '#ff6b6b' }}>⚠️ Bảo mật quan trọng:</div>
-                <div>Không nên chia sẻ URL máy chủ và khóa luồng với bất kỳ ai để tránh người khác xâm nhập vào phát trực tiếp của bạn.</div>
-              </div>
-
-              {/* OBS Setup Instructions */}
-              <div style={{ 
-                fontSize: '12px', 
-                color: '#b0b3b8', 
-                marginTop: '16px',
-                padding: '12px',
-                background: '#18191a',
-                borderRadius: '6px'
-              }}>
-                <div style={{ fontWeight: '600', marginBottom: '8px', color: '#0084ff' }}>📋 Hướng dẫn cấu hình OBS Studio:</div>
-                <ol style={{ margin: '0', paddingLeft: '20px', lineHeight: '1.6' }}>
-                  <li>Mở OBS Studio → Settings → Stream</li>
-                  <li>Service: chọn "Custom..."</li>
-                  <li>Server: dán <strong>URL máy chủ</strong> ở trên</li>
-                  <li>Stream Key: dán <strong>Khóa luồng</strong> ở trên</li>
-                  <li>Nhấn OK → Start Streaming</li>
-                </ol>
-              </div>
-            </div>
-          </div>
-
-          {/* Post Details Section */}
-          <div style={{ 
-            background: '#242526',
-            borderRadius: '8px',
-            padding: '20px'
-          }}>
-            <h3 style={{ 
-              margin: '0 0 16px 0',
-              fontSize: '17px',
-              fontWeight: '600'
-            }}>Thêm chi tiết về bài viết</h3>
-            
-            {/* Tiêu đề */}
-            <div style={{ marginBottom: '15px' }}>
-              <h4 style={{ 
-                margin: '0 0 5px 0',
-                fontSize: '14px',
-                fontWeight: '600'
-              }}>Tiêu đề</h4>
-              <div 
-                onClick={handleOpenEditPopup}
-                style={{
-                  background: '#3a3b3c',
-                  borderRadius: '6px',
-                  padding: '12px',
-                  cursor: 'pointer',
-                  border: '1px solid #4a4b4c'
-                }}
-              >
-                <div style={{ 
-                  fontSize: '15px',
-                  color: room.title ? '#e4e6eb' : '#8b9298'
-                }}>
-                  {room.title || 'Tiêu đề '}
-                </div>
-              </div>
-            </div>
-
-            {/* Mô tả */}
-            <div>
-              <h4 style={{ 
-                margin: '0 0 5px 0',
-                fontSize: '14px',
-                fontWeight: '600'
-              }}>Mô tả</h4>
-              <div 
-                onClick={handleOpenEditPopup}
-                style={{
-                  background: '#3a3b3c',
-                  borderRadius: '6px',
-                  padding: '12px',
-                  cursor: 'pointer',
-                  border: '1px solid #4a4b4c',
-                  minHeight: '60px'
-                }}
-              >
-                <div style={{ 
-                  fontSize: '13px',
-                  color: room.description ? '#b0b3b8' : '#8b9298'
-                }}>
-                  {room.description || 'Mô tả'}
-                </div>
-              </div>
-            </div>
-          </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <Button onClick={() => setIsEditModalVisible(true)} icon={<SettingOutlined />}>
+            Chỉnh sửa thông tin
+          </Button>
+          <Button 
+            type="primary" 
+            size="large"
+            danger={isPreviewReady} // Red if ready, blue if not
+            disabled={!isPreviewReady || !room.title}
+            onClick={handleGoLive}
+            loading={isSubmitting}
+          >
+            {isPreviewReady ? 'PHÁT TRỰC TIẾP' : 'ĐANG CHỜ OBS...'}
+          </Button>
         </div>
       </div>
 
-      {/* Edit Popup */}
-      {showEditPopup && (
-        <div style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100%', 
-          height: '100%', 
-          background: 'rgba(0,0,0,0.7)', 
-          zIndex: 999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{ 
-            background: '#242526',
-            padding: '24px',
-            borderRadius: '8px',
-            width: '500px',
-            maxWidth: '90%'
-          }}>
-            <h3 style={{ 
-              margin: '0 0 20px 0',
-              fontSize: '20px',
-              fontWeight: '600',
-              color: '#e4e6eb'
-            }}>Chỉnh sửa chi tiết</h3>
-            
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleUpdateDetails({ 
-                title: e.target.title.value, 
-                description: descriptionText 
-              });
-            }}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ 
-                  display: 'block',
-                  marginBottom: '8px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  color: '#e4e6eb'
-                }}>Tiêu đề</label>
-                <input
-                  name="title"
-                  defaultValue={room.title}
-                  placeholder="Tiêu đề (bắt buộc)"
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: '#3a3b3c',
-                    color: '#e4e6eb',
-                    border: '1px solid #4a4b4c',
-                    borderRadius: '6px',
-                    fontSize: '15px',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '20px', position: 'relative' }}>
-                <div style={{ 
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '8px'
-                }}>
-                  <label style={{ 
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    color: '#e4e6eb'
-                  }}>Mô tả</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '20px',
-                      padding: '4px 8px'
-                    }}
-                    title="Thêm emoji"
-                  >
-                    <SmileOutlined />
-                  </button>
-                </div>
-                <textarea
-                  name="description"
-                  value={descriptionText}
-                  onChange={(e) => setDescriptionText(e.target.value)}
-                  placeholder="Mô tả"
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: '#3a3b3c',
-                    color: '#e4e6eb',
-                    border: '1px solid #4a4b4c',
-                    borderRadius: '6px',
-                    fontSize: '15px',
-                    minHeight: '100px',
-                    resize: 'vertical',
-                    boxSizing: 'border-box',
-                    fontFamily: 'inherit'
-                  }}
-                />
-                {showEmojiPicker && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: '0',
-                    zIndex: 1000,
-                    marginTop: '8px'
-                  }}>
-                    <EmojiPicker
-                      onEmojiClick={(emojiObject) => {
-                        setDescriptionText(descriptionText + emojiObject.emoji);
-                      }}
-                      theme="dark"
-                      width={300}
-                      height={400}
-                    />
+      <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+        
+        {/* LEFT: PREVIEW */}
+        <div style={{ flex: 2, minWidth: '300px' }}>
+          <Card 
+            bordered={false} 
+            style={{ background: '#1f1f1f', borderRadius: '8px' }}
+            bodyStyle={{ padding: 0 }}
+          >
+            <div style={{ position: 'relative', paddingTop: '56.25%', background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
+              {isPreviewReady ? (
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+                  <div data-vjs-player style={{ width: '100%', height: '100%' }}>
+                    <video ref={videoRef} className="video-js vjs-big-play-centered vjs-16-9" playsInline muted />
                   </div>
-                )}
+                </div>
+              ) : (
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#666' }}>
+                  <VideoCameraOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
+                  <Text style={{ color: '#888' }}>Kết nối phần mềm phát trực tiếp (OBS) để xem trước</Text>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '20px' }}>
+              <Title level={4} style={{ color: '#fff', margin: 0 }}>{room.title || 'Chưa có tiêu đề'}</Title>
+              <Text style={{ color: '#888' }}>{room.description || 'Chưa có mô tả'}</Text>
+              <div style={{ marginTop: '12px' }}>
+                <Text style={{ color: '#888' }}>Quyền riêng tư: </Text>
+                <Text strong style={{ color: '#fff' }}>{room.privacyType === 'public' ? 'Công khai' : 'Người theo dõi'}</Text>
               </div>
-
-              <div style={{ 
-                display: 'flex',
-                gap: '12px',
-                justifyContent: 'flex-end'
-              }}>
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setShowEditPopup(false);
-                    setShowEmojiPicker(false);
-                  }}
-                  style={{
-                    padding: '10px 24px',
-                    background: '#3a3b3c',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#e4e6eb',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Hủy
-                </button>
-                <button 
-                  type="submit"
-                  disabled={isSubmitting}
-                  style={{
-                    padding: '10px 24px',
-                    background: isSubmitting ? '#4a4a4a' : '#0084ff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: 'white',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: isSubmitting ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isSubmitting ? 'Đang lưu...' : 'Lưu'}
-                </button>
-              </div>
-            </form>
-          </div>
+            </div>
+          </Card>
         </div>
-      )}
+
+        {/* RIGHT: SETTINGS */}
+        <div style={{ flex: 1, minWidth: '300px' }}>
+          <Card title={<span style={{color:'white'}}>Cài đặt Stream</span>} bordered={false} style={{ background: '#1f1f1f', color: '#fff' }} headStyle={{borderBottom:'1px solid #303030'}}>
+            
+            <Alert 
+              message="Bảo mật" 
+              description="Không chia sẻ Khóa luồng (Stream Key) cho bất kỳ ai." 
+              type="warning" 
+              showIcon 
+              style={{ marginBottom: '20px', background: '#2b2111', border: '1px solid #443b24', color: '#d4b106' }}
+            />
+
+            <div style={{ marginBottom: '20px' }}>
+              <Text style={{ color: '#aaa', display: 'block', marginBottom: '8px' }}>URL Máy chủ (Server)</Text>
+              <Input.Group compact>
+                <Input 
+                  style={{ width: 'calc(100% - 80px)', background: '#141414', color: '#fff', border: '1px solid #303030' }} 
+                  value={room.rtmpUrl} 
+                  readOnly 
+                />
+                <Button 
+                  type="primary" 
+                  icon={<CopyOutlined />} 
+                  onClick={() => copyToClipboard(room.rtmpUrl, 'URL')}
+                >
+                  Sao chép
+                </Button>
+              </Input.Group>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <Text style={{ color: '#aaa', display: 'block', marginBottom: '8px' }}>Khóa luồng (Stream Key)</Text>
+              <Input.Group compact>
+                <Input.Password 
+                  style={{ width: 'calc(100% - 80px)', background: '#141414', color: '#fff', border: '1px solid #303030' }} 
+                  value={room.streamKey} 
+                  readOnly 
+                  visibilityToggle={{ visible: showStreamKey, onVisibleChange: setShowStreamKey }}
+                />
+                <Button 
+                  type="primary" 
+                  icon={<CopyOutlined />} 
+                  onClick={() => copyToClipboard(room.streamKey, 'Stream Key')}
+                >
+                  Sao chép
+                </Button>
+              </Input.Group>
+            </div>
+
+            <div style={{ marginTop: '30px', borderTop: '1px solid #303030', paddingTop: '20px' }}>
+              <Text strong style={{ color: '#fff' }}>Hướng dẫn OBS:</Text>
+              <ol style={{ color: '#888', paddingLeft: '20px', marginTop: '10px' }}>
+                <li>Mở <b>OBS Studio</b> &rarr; Settings &rarr; Stream</li>
+                <li>Service: chọn <b>Custom...</b></li>
+                <li>Server: Dán <b>URL Máy chủ</b> ở trên</li>
+                <li>Stream Key: Dán <b>Khóa luồng</b> ở trên</li>
+                <li>Nhấn <b>Start Streaming</b></li>
+              </ol>
+            </div>
+
+          </Card>
+        </div>
+      </div>
+
+      {/* MODAL EDIT */}
+      <Modal
+        title="Chỉnh sửa thông tin"
+        open={isEditModalVisible}
+        onCancel={() => setIsEditModalVisible(false)}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical" onFinish={handleUpdateInfo}>
+          <Form.Item name="title" label="Tiêu đề" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề' }]}>
+            <Input placeholder="Nhập tiêu đề livestream" />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <TextArea rows={4} placeholder="Mô tả nội dung..." />
+          </Form.Item>
+          <Form.Item name="privacyType" label="Quyền riêng tư">
+            <Select>
+              <Option value="public">Công khai</Option>
+              <Option value="follow_only">Chỉ người theo dõi</Option>
+            </Select>
+          </Form.Item>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <Button onClick={() => setIsEditModalVisible(false)}>Hủy</Button>
+            <Button type="primary" htmlType="submit" loading={isSubmitting}>Lưu thay đổi</Button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 };

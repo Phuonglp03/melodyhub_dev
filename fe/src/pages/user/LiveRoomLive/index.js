@@ -1,5 +1,4 @@
 // src/pages/liveroom_live/index.js
-// src/pages/liveroom_live/index.js
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import videojs from 'video.js';
@@ -15,65 +14,79 @@ import {
   onStreamEnded,
   offSocketEvents,
   disconnectSocket,
-  onUserBanned,
   onMessageRemoved,
   onViewerCountUpdate,
   onChatError
 } from '../../../services/user/socketService';
-import { Dropdown, Button } from 'antd';
-import { MoreOutlined, SendOutlined, SmileOutlined } from '@ant-design/icons';
+import { Dropdown, Button, Modal, Input, Form, Select, Badge, Avatar, message, Card } from 'antd';
+import { 
+  MoreOutlined, 
+  SendOutlined, 
+  SmileOutlined, 
+  UserOutlined, 
+  ClockCircleOutlined, 
+  SettingOutlined, 
+  LockOutlined, 
+  GlobalOutlined,
+  PoweroffOutlined,
+  StopOutlined
+} from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import EmojiPicker from 'emoji-picker-react';
 import LiveVideo from '../../../components/LiveVideo';
+
+const { TextArea } = Input;
+const { Option } = Select;
 
 const LiveStreamLive = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
 
+  // State
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [playbackUrl, setPlaybackUrl] = useState(null);
-
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
-  const [showPicker, setShowPicker] = useState(false);
-
-  const [liveTitle, setLiveTitle] = useState("");
-  const [liveDescription, setLiveDescription] = useState("");
-  const [privacy, setPrivacy] = useState('public');
-
-  // Popups
-  const [showEditPopup, setShowEditPopup] = useState(false);
-  const [showViewersPopup, setShowViewersPopup] = useState(false);
-  const [showBannedUsersPopup, setShowBannedUsersPopup] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [descriptionText, setDescriptionText] = useState('');
+  
+  // Edit State
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editForm] = Form.useForm();
 
-  // Stats
+  // Viewer/Ban State
+  const [isViewersModalVisible, setIsViewersModalVisible] = useState(false);
+  const [isBannedModalVisible, setIsBannedModalVisible] = useState(false);
   const [currentViewers, setCurrentViewers] = useState(0);
-  const [viewers, setViewers] = useState([]);
-  const [duration, setDuration] = useState(0); // in seconds
+  const [viewersList, setViewersList] = useState([]);
+  
+  // 🛠️ FIX: Khởi tạo là mảng rỗng để tránh lỗi map
   const [bannedUsers, setBannedUsers] = useState([]);
 
-  // Video.js refs
+  // Stats
+  const [duration, setDuration] = useState(0);
+
+  // Refs
   const videoRef = useRef(null);
   const playerRef = useRef(null);
-  const chatRef = useRef(null);
+  const chatEndRef = useRef(null);
 
+  // --- EFFECT: INIT & SOCKET ---
   useEffect(() => {
     initSocket();
 
     const fetchRoom = async () => {
       try {
         const roomData = await livestreamService.getLiveStreamById(roomId);
-        const currentUserId = user?.user?.id;
+        const currentUserId = user?.user?.id || user?.user?._id;
         const hostId = roomData.hostId?._id;
         const history = await livestreamService.getChatHistory(roomId);
+
         if (hostId !== currentUserId) {
-          setError("Bạn không có quyền truy cập vào trang này.");
+          setError("Bạn không có quyền truy cập trang này.");
           setLoading(false);
           return;
         }
@@ -81,1374 +94,477 @@ const LiveStreamLive = () => {
           navigate(`/livestream/setup/${roomId}`); return;
         }
         if (roomData.status === 'ended') {
-          alert('Stream đã kết thúc.');
           navigate('/'); return;
         }
+
         setRoom(roomData);
-        setLiveTitle(roomData.title);
-        setLiveDescription(roomData.description || "");
-        setPrivacy(roomData.privacyType);
+        // Pre-fill form
+        editForm.setFieldsValue({
+          title: roomData.title,
+          description: roomData.description,
+          privacyType: roomData.privacyType
+        });
 
         const hlsUrl = roomData.playbackUrls?.hls;
-        console.log('[LiveStream] Playback URL:', hlsUrl);
-        console.log('[LiveStream] Room status:', roomData.status);
-
-        if (hlsUrl) {
-          setPlaybackUrl(hlsUrl);
-        } else {
-          console.error('[LiveStream] No HLS URL available');
-        }
+        if (hlsUrl) setPlaybackUrl(hlsUrl);
 
         setLoading(false);
         joinRoom(roomId);
-        setMessages(history.slice(-20));
+        setMessages(history.slice(-50));
+        
+        // 🛠️ FIX: Đảm bảo luôn là mảng
         setBannedUsers(roomData.bannedUsers || []);
+        
       } catch (err) {
-        setError('Không tìm thấy phòng live hoặc stream đã kết thúc.');
+        setError('Lỗi tải phòng livestream.');
         setLoading(false);
       }
     };
 
     fetchRoom();
 
-    // Lắng nghe các sự kiện socket
+    // Listeners
     onNewMessage((message) => {
-      setMessages(prev => {
-        const newMessages = [...prev, message].slice(-20);
-        return newMessages;
-      });
+      setMessages(prev => [...prev, message].slice(-100)); 
     });
 
     onStreamEnded(() => {
-      alert("Livestream đã kết thúc.");
-      navigate('/');
+      Modal.info({
+        title: 'Kết thúc',
+        content: 'Livestream đã kết thúc.',
+        onOk: () => navigate('/')
+      });
     });
 
     onStreamDetailsUpdated((details) => {
-      setLiveTitle(details.title);
-      setLiveDescription(details.description || "");
+      setRoom(prev => ({ ...prev, title: details.title, description: details.description }));
     });
     
     onMessageRemoved((data) => {
       setMessages(prev => prev.map(msg =>
-        msg._id === data.messageId ? { ...msg, message: 'Tin nhắn này đã bị gỡ', deleted: true } : msg
+        msg._id === data.messageId ? { ...msg, message: 'Tin nhắn đã bị gỡ', deleted: true } : msg
       ));
     });
 
     onStreamPrivacyUpdated((data) => {
-      console.log('[Socket] Cập nhật privacy:', data.privacyType);
-      setPrivacy(data.privacyType);
+      setRoom(prev => ({ ...prev, privacyType: data.privacyType }));
     });
 
     onViewerCountUpdate((data) => {
-      console.log('[Socket] Cập nhật viewer count:', data);
       if (data.roomId === roomId) {
         setCurrentViewers(data.currentViewers || 0);
       }
     });
 
     onChatError((errorMsg) => {
-      console.error('[Socket] Chat error:', errorMsg);
-      alert(errorMsg || 'Không thể gửi tin nhắn.');
+      message.error(errorMsg);
     });
 
     return () => {
       offSocketEvents();
       disconnectSocket();
-      // Cleanup Video.js player
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
       }
     };
-  }, [roomId, navigate, user?.user?.id]);
+  }, [roomId, navigate, user, editForm]);
 
+  // --- EFFECT: AUTO SCROLL CHAT ---
   useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
-    }
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Track livestream duration
+  // --- EFFECT: DURATION TIMER ---
   useEffect(() => {
     if (!room || !room.startedAt) return;
-
-    const calculateDuration = () => {
+    const interval = setInterval(() => {
       const start = new Date(room.startedAt);
       const now = new Date();
-      const diff = Math.floor((now - start) / 1000); // seconds
-      setDuration(diff);
-    };
-
-    calculateDuration(); // Initial calculation
-    const interval = setInterval(calculateDuration, 1000); // Update every second
-
+      setDuration(Math.floor((now - start) / 1000));
+    }, 1000);
     return () => clearInterval(interval);
   }, [room]);
 
-  // Initialize Video.js player when playback URL is available
+  // --- EFFECT: VIDEO PLAYER ---
   useEffect(() => {
-    // Cleanup function
-    const cleanup = () => {
-      if (playerRef.current) {
-        try {
-          playerRef.current.dispose();
-        } catch (e) {
-          console.error('[Video.js] Dispose error:', e);
-        }
-        playerRef.current = null;
-      }
-    };
-
     if (playbackUrl && videoRef.current && !playerRef.current) {
-      // Đợi một chút để DOM sẵn sàng
-      setTimeout(() => {
-        if (!videoRef.current) return;
-
-        try {
-          const player = videojs(videoRef.current, {
-            autoplay: true,
-            muted: true,
-            controls: true,
-            fluid: false,
-            fill: true,
-            liveui: true,
-            // CẤU HÌNH LIVE TRACKER MỚI:
-            liveTracker: {
-              trackingThreshold: 15, // Giảm xuống để sát hơn
-              liveTolerance: 10,     // Chấp nhận độ lệch 10s
-            },
-            controlBar: {
-              progressControl: false, // ✅ Ẩn progress bar như host
-              currentTimeDisplay: false,
-              timeDivider: false,
-              durationDisplay: false,
-              remainingTimeDisplay: false,
-              seekToLive: true // Hiện nút "LIVE"
-            },
-            html5: {
-              vhs: {
-                enableLowInitialPlaylist: true,
-                smoothQualityChange: true,
-                overrideNative: true,
-                
-                // --- CẤU HÌNH QUAN TRỌNG ĐỂ KHẮC PHỤC LỖI 404/DECODE ---
-                
-                // 1. Tự động thử lại khi lỗi (Thay vì sập luôn)
-                // Cho phép reload playlist nếu gặp lỗi tải segment
-                playlistRetryCount: 3,     
-                playlistRetryDelay: 500,   // Thử lại sau 0.5s
-                
-                // 2. Cấu hình bộ đệm (Buffer)
-                // Giữ buffer thấp để giảm độ trễ (nhưng rủi ro hơn)
-                bufferBasedBitrateSelection: true,
-                
-                // 3. Xử lý Live Sync (Đồng bộ)
-                // Nếu bạn muốn sát nhất, hãy để số thấp (ví dụ 2), 
-                // NHƯNG nếu mạng GCS chậm, nó sẽ gây lỗi. 
-                // Con số 3 là mức "An toàn tối thiểu". Đừng để thấp hơn.
-                liveSyncDurationCount: 2, 
-                
-                // Cho phép player rượt đuổi nếu bị tụt lại quá xa (15s)
-                liveMaxLatencyDurationCount: 7, 
-              },
-              nativeAudioTracks: false,
-              nativeVideoTracks: false
-            }
-          });
-
-          
-
-          player.src({
-            src: playbackUrl,
-            type: 'application/x-mpegURL'
-          });
-
-          playerRef.current = player;
-
-           
-
-          player.on('loadedmetadata', () => {
-            console.log('[Video.js] Metadata loaded');
-          });
-
-          player.on('loadeddata', () => {
-            console.log('[Video.js] Data loaded');
-          });
-
-          player.on('canplay', () => {
-            console.log('[Video.js] Can play');
-            player.play().catch(e => {
-              console.error('[Video.js] Play error:', e);
-            });
-          });
-
-          player.on('playing', () => {
-            console.log('[Video.js] Playing');
-          });
-
-          // --- THÊM: XỬ LÝ LỖI TỰ ĐỘNG ---
-          // Nếu gặp lỗi mạng (như 404), thử reload lại nguồn sau 1s
-          player.on('error', () => {
-            const err = player.error();
-            console.warn('VideoJS Error:', err);
-            
-            // Nếu là lỗi mạng hoặc lỗi decode
-            if (err && (err.code === 2 || err.code === 3 || err.code === 4)) {
-                console.log('Đang thử khôi phục stream...');
-                setTimeout(() => {
-                    if (player && !player.isDisposed()) {
-                        player.src({
-                            src: playbackUrl,
-                            type: 'application/x-mpegURL'
-                        });
-                        player.play().catch(e => console.log('Auto-play prevented'));
-                    }
-                }, 1500); // Đợi 1.5s rồi thử lại
-            }
-          });
-          player.on('waiting', () => {
-            console.log('[Video.js] Waiting/Buffering');
-          });
-
-          // ✅ Track pause state để jump to live edge khi resume
-          let wasPaused = false;
-          
-          player.on('pause', () => {
-            wasPaused = true;
-            console.log('[Video.js] Host paused video');
-          });
-
-          player.on('play', () => {
-            if (wasPaused) {
-              // Host ấn play sau khi pause → jump to live edge
-              console.log('[Video.js] Resuming from pause, jumping to live edge');
-              setTimeout(() => {
-                const liveTracker = player.liveTracker;
-                if (liveTracker && liveTracker.seekToLiveEdge) {
-                  liveTracker.seekToLiveEdge();
-                }
-              }, 100);
-              wasPaused = false;
-            }
-          });
-
-          // Log player ready
-          player.ready(() => {
-            console.log('[Video.js] Player ready');
-            console.log('[Video.js] Current source:', player.currentSrc());
-          });
-
-        } catch (error) {
-          console.error('[Video.js] Initialization error:', error);
+      const player = videojs(videoRef.current, {
+        autoplay: true,
+        muted: true, 
+        controls: true,
+        fluid: true,
+        liveui: true,
+        html5: {
+          vhs: {
+            enableLowInitialPlaylist: true,
+            smoothQualityChange: true,
+            overrideNative: true,
+            liveSyncDurationCount: 3,
+          }
         }
-      }, 100);
+      });
+      player.src({ src: playbackUrl, type: 'application/x-mpegURL' });
+      playerRef.current = player;
     }
-
-    return cleanup;
   }, [playbackUrl]);
+
+  // --- HANDLERS ---
 
   const handleSendChat = (e) => {
     e.preventDefault();
     if (chatInput.trim()) {
       sendMessage(roomId, chatInput.trim());
       setChatInput("");
-      setShowPicker(false); // Đóng emoji picker sau khi gửi
-    }
-  };
-
-  const handleEndStream = async () => {
-    if (window.confirm("Bạn có chắc muốn kết thúc livestream?")) {
-      try {
-        await livestreamService.endLiveStream(roomId);
-        // onStreamEnded sẽ tự động được kích hoạt và chuyển hướng
-      } catch (err) {
-        alert("Lỗi khi kết thúc stream.");
-      }
+      setShowEmojiPicker(false);
     }
   };
 
   const onEmojiClick = (emojiObject) => {
-    setChatInput(prevInput => prevInput + emojiObject.emoji);
+    setChatInput(prev => prev + emojiObject.emoji);
   };
 
-  const formatDuration = (seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleBan = async (userId, messageId) => {
-    try {
-      await livestreamService.banUser(roomId, userId, { messageId });
-      setMessages(prev => prev.map(msg =>
-        msg._id === messageId ? { ...msg, message: 'Tin nhắn này đã bị gỡ', deleted: true } : msg
-      ));
-      // Add to banned list
-      if (!bannedUsers.find(u => u._id === userId || u === userId)) {
-        setBannedUsers(prev => [...prev, userId]);
+  const handleEndStream = () => {
+    Modal.confirm({
+      title: 'Kết thúc Livestream?',
+      content: 'Hành động này sẽ dừng phát sóng ngay lập tức.',
+      okText: 'Kết thúc ngay',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          await livestreamService.endLiveStream(roomId);
+        } catch (err) {
+          console.error(err);
+        }
       }
-    } catch (err) {
-      console.error('Lỗi ban:', err);
-    }
+    });
   };
 
-  const handleBanMute = async (userId) => {
-    try {
-      await livestreamService.banUser(roomId, userId, { messageId: null });
-      // Add to banned list
-      if (!bannedUsers.find(u => u._id === userId || u === userId)) {
-        setBannedUsers(prev => [...prev, userId]);
-      }
-      alert('Đã chặn người dùng không cho bình luận.');
-    } catch (err) {
-      console.error('Lỗi ban:', err);
-      alert('Không thể chặn người dùng.');
-    }
-  };
-
-  const handleUnban = async (userId) => {
-    try {
-      await livestreamService.unbanUser(roomId, userId);
-      setBannedUsers(prev => prev.filter(id => String(id._id || id) !== String(userId)));
-      alert('Đã bỏ chặn người dùng.');
-    } catch (err) {
-      console.error('Lỗi unban:', err);
-      alert('Không thể bỏ chặn người dùng.');
-    }
-  };
-
-  const handleShowBannedUsers = async () => {
-    setShowBannedUsersPopup(true);
-  };
-
-  const handleOpenEditPopup = () => {
-    setDescriptionText(liveDescription || '');
-    setShowEmojiPicker(false);
-    setShowEditPopup(true);
-  };
-
-  const handleUpdateDetails = async ({ title, description }) => {
+  const handleUpdateInfo = async (values) => {
     setIsSubmitting(true);
     try {
-      const { details } = await livestreamService.updateLiveStreamDetails(roomId, { title, description });
-      setLiveTitle(details.title);
-      setLiveDescription(details.description || "");
-      setShowEditPopup(false);
+      await livestreamService.updateLiveStreamDetails(roomId, { 
+        title: values.title, 
+        description: values.description 
+      });
+      if (values.privacyType !== room.privacyType) {
+        await livestreamService.updatePrivacy(roomId, values.privacyType);
+      }
+      message.success("Đã cập nhật thông tin");
+      setIsEditModalVisible(false);
     } catch (err) {
-      console.error("Lỗi cập nhật:", err);
-      alert("Không thể cập nhật thông tin.");
+      message.error("Lỗi cập nhật");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleShowViewers = async () => {
+  // 🛠️ FIX: Cập nhật danh sách Ban ngay lập tức khi Ban từ chat
+  const handleBanAction = async (userTarget, messageId, type) => {
+    const userId = userTarget._id || userTarget.id;
     try {
-      const data = await livestreamService.getRoomViewers(roomId);
-      setViewers(data.viewers || []);
-      setShowViewersPopup(true);
+      if (type === 'delete') {
+        await livestreamService.banUser(roomId, userId, { messageId });
+        setMessages(prev => prev.map(msg => msg._id === messageId ? { ...msg, deleted: true } : msg));
+      } else {
+        await livestreamService.banUser(roomId, userId, { messageId: null });
+      }
+      
+      message.success(`Đã chặn ${userTarget.displayName}`);
+
+      // Thêm vào state bannedUsers ngay lập tức để hiện trong Modal
+      setBannedUsers(prev => {
+        if (prev.find(u => u._id === userId)) return prev;
+        return [...prev, userTarget]; 
+      });
+
     } catch (err) {
-      console.error('Lỗi khi lấy viewers:', err);
-      alert('Không thể lấy danh sách người xem.');
+      console.error(err);
+      message.error("Không thể chặn người dùng này");
     }
   };
 
-  if (loading) return <div style={{ color: 'white' }}>Đang tải stream...</div>;
-  if (error) return <div style={{ color: 'red' }}>{error}</div>;
-  if (!room) return null;
+  const fetchViewers = async () => {
+    try {
+      const res = await livestreamService.getRoomViewers(roomId);
+      setViewersList(res.viewers || []);
+      setIsViewersModalVisible(true);
+    } catch (e) { console.error(e); }
+  };
+
+  // 🛠️ FIX: Hàm Unban hoạt động chính xác
+  const handleUnban = async (userId) => {
+    try {
+      await livestreamService.unbanUser(roomId, userId);
+      // Xóa khỏi danh sách local
+      setBannedUsers(prev => prev.filter(u => u._id !== userId));
+      message.success("Đã bỏ chặn");
+    } catch (e) { 
+      console.error(e);
+      message.error("Lỗi khi bỏ chặn");
+    }
+  };
+
+  const formatTime = (s) => {
+    const h = Math.floor(s / 3600).toString().padStart(2,'0');
+    const m = Math.floor((s % 3600) / 60).toString().padStart(2,'0');
+    const sec = (s % 60).toString().padStart(2,'0');
+    return `${h}:${m}:${sec}`;
+  };
+
+  if (loading) return <div style={{height:'100vh', background:'#000', color:'#fff', display:'flex', justifyContent:'center', alignItems:'center'}}>Loading Studio...</div>;
+  if (error) return <div style={{height:'100vh', background:'#000', color:'red', display:'flex', justifyContent:'center', alignItems:'center'}}>{error}</div>;
 
   return (
-    <>
-      {/* ✅ CSS để đẩy volume và fullscreen button sang phải */}
-      <style>{`
-        .video-js .vjs-control-bar {
-          display: flex !important;
-        }
-        .video-js .vjs-volume-panel {
-          margin-right: auto !important;
-        }
-      `}</style>
-
-      <div style={{
-        minHeight: '100vh',
-        background: '#18191a',
-        color: 'white',
-        padding: '0'
-      }}>
-        {/* Main Content */}
-      <div style={{
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0e0e10', color: '#efeff1' }}>
+      
+      {/* --- TOP HEADER BAR --- */}
+      <header style={{
+        height: '60px',
+        background: '#18181b',
+        borderBottom: '1px solid #2f2f35',
         display: 'flex',
-        gap: '0',
-        minHeight: '100vh'
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 20px',
+        zIndex: 100
       }}>
-        {/* Left Panel - Video */}
-        <div style={{
-          flex: 1,
-          background: '#18191a',
-          padding: '20px',
-          overflowY: 'auto'
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ fontWeight: '700', fontSize: '18px', color: '#fff' }}>STREAM MANAGER</div>
+          <Badge status="processing" color="red" text={<span style={{color:'#ff4d4d', fontWeight:'600'}}>LIVE</span>} />
+          <div style={{ background:'#2f2f35', padding:'4px 12px', borderRadius:'4px', display:'flex', alignItems:'center', gap:'8px', fontSize:'14px' }}>
+            <ClockCircleOutlined /> {formatTime(duration)}
+          </div>
+        </div>
+
+        <Button 
+          type="primary" 
+          danger 
+          icon={<PoweroffOutlined />} 
+          onClick={handleEndStream}
+          style={{ fontWeight: '600' }}
+        >
+          KẾT THÚC STREAM
+        </Button>
+      </header>
+
+      {/* --- MAIN CONTENT --- */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        
+        {/* LEFT: VIDEO & STATS */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '20px' }}>
+          
           {/* Video Player */}
-          <div style={{
-            position: 'relative',
-            background: 'black',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            marginBottom: '20px',
-            width: '80%',
-            aspectRatio: '16/9'
-          }}>
+          <div style={{ width: '100%', aspectRatio: '16/9', background: '#000', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
             {playbackUrl ? (
-              <>
-                <div data-vjs-player style={{
-                  width: '100%',
-                  height: '100%',
-                  position: 'relative'
-                }}>
-                  <video
-                    ref={videoRef}
-                    className="video-js vjs-big-play-centered vjs-16-9"
-                    playsInline
-                    preload="auto"
-                  />
-                </div>
-                {/* Live Indicator with delay detection */}
+              <div data-vjs-player style={{ width: '100%', height: '100%' }}>
+                <video ref={videoRef} className="video-js vjs-big-play-centered vjs-16-9" playsInline />
                 {playerRef.current && <LiveVideo player={playerRef.current} />}
-              </>
-            ) : (
-              <div style={{
-                height: '100%',
-                minHeight: '400px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#b0b3b8',
-                flexDirection: 'column',
-                gap: '16px'
-              }}>
-                <div style={{
-                  width: '60px',
-                  height: '60px',
-                  border: '4px solid #3a3b3c',
-                  borderTop: '4px solid #0084ff',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }}></div>
-                <div>Đang tải video livestream...</div>
-                <style>{`
-                  @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                  }
-                `}</style>
               </div>
+            ) : (
+              <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:'#666' }}>Connecting...</div>
             )}
           </div>
 
-
-          {/* Stats and Details Row */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-            {/* Thống kê */}
-            <div style={{
-              flex: 1,
-              background: '#242526',
-              borderRadius: '8px',
-              padding: '20px'
-            }}>
-              <h3 style={{
-                margin: '0 0 16px 0',
-                fontSize: '17px',
-                fontWeight: '600'
-              }}>Thông tin chi tiết `{playbackUrl}`</h3>
-
-              {/* Row 1: Người xem + Tin nhắn */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-                {/* Người xem */}
-                <div 
-                  onClick={handleShowViewers}
-                  style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px',
-                    background: '#3a3b3c',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#4a4b4c'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#3a3b3c'}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '18px' }}>👁️</div>
-                    <div style={{ fontSize: '14px', color: '#e4e6eb' }}>Người xem</div>
-                  </div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#e4e6eb' }}>
-                    {currentViewers}
-                  </div>
-                </div>
-
-                {/* Tin nhắn */}
-                <div style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px',
-                  background: '#3a3b3c',
-                  borderRadius: '8px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '18px' }}>💬</div>
-                    <div style={{ fontSize: '14px', color: '#e4e6eb' }}>Tin nhắn</div>
-                  </div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#e4e6eb' }}>
-                    {messages.length}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2: Quyền riêng tư + Người bị chặn */}
-              <div style={{ display: 'flex', gap: '12px' }}>
-                {/* Quyền riêng tư */}
-                <div style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px',
-                  background: '#3a3b3c',
-                  borderRadius: '8px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '18px' }}>
-                      {privacy === 'public' ? '🌍' : '👥'}
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#e4e6eb' }}>Quyền riêng tư</div>
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#b0b3b8' }}>
-                    {privacy === 'public' ? 'Công khai' : 'Người theo dõi'}
-                  </div>
-                </div>
-
-                {/* Người bị chặn */}
-                <div 
-                  onClick={handleShowBannedUsers}
-                  style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px',
-                    background: '#3a3b3c',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#4a4b4c'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#3a3b3c'}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '18px' }}>🚫</div>
-                    <div style={{ fontSize: '14px', color: '#e4e6eb' }}>Người bị chặn</div>
-                  </div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#ff4444' }}>
-                    {bannedUsers.length}
-                  </div>
-                </div>
+          {/* Stats Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+            <div 
+              onClick={fetchViewers}
+              style={{ background: '#1f1f23', padding: '16px', borderRadius: '8px', cursor: 'pointer', border: '1px solid #2f2f35', transition: '0.2s' }}
+              onMouseEnter={(e) => e.currentTarget.style.borderColor = '#bf94ff'}
+              onMouseLeave={(e) => e.currentTarget.style.borderColor = '#2f2f35'}
+            >
+              <div style={{ color: '#adadb8', fontSize: '13px', marginBottom: '4px' }}>Người xem trực tiếp</div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#bf94ff' }}>{currentViewers}</div>
+            </div>
+            
+            <div style={{ background: '#1f1f23', padding: '16px', borderRadius: '8px', border: '1px solid #2f2f35' }}>
+              <div style={{ color: '#adadb8', fontSize: '13px', marginBottom: '4px' }}>Quyền riêng tư</div>
+              <div style={{ fontSize: '16px', fontWeight: '600', display:'flex', alignItems:'center', gap:'8px' }}>
+                {room.privacyType === 'public' ? <GlobalOutlined /> : <LockOutlined />}
+                {room.privacyType === 'public' ? 'Công khai' : 'Người theo dõi'}
               </div>
             </div>
 
-            {/* Chi tiết bài viết */}
-            <div style={{
-              flex: 1,
-              background: '#242526',
-              borderRadius: '8px',
-              padding: '20px'
-            }}>
-              <h3 style={{
-                margin: '0 0 16px 0',
-                fontSize: '17px',
-                fontWeight: '600'
-              }}>Chi tiết bài viết</h3>
-
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  marginBottom: '8px'
-                }}>
-                  <label style={{
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    color: '#b0b3b8'
-                  }}>Tiêu đề</label>
-                  <button
-                    onClick={handleOpenEditPopup}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#0084ff',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      fontWeight: '600'
-                    }}
-                  >
-                    Chỉnh sửa
-                  </button>
-                </div>
-                <div style={{
-                  fontSize: '15px',
-                  color: '#e4e6eb',
-                  fontWeight: '500'
-                }}>
-                  {liveTitle || 'Tiêu đề chưa có'}
-                </div>
+            {/* 🛠️ FIX: Card cho Người bị chặn - Bấm vào để mở Modal */}
+            <div 
+              onClick={() => setIsBannedModalVisible(true)}
+              style={{ background: '#1f1f23', padding: '16px', borderRadius: '8px', cursor: 'pointer', border: '1px solid #2f2f35', transition: '0.2s' }}
+              onMouseEnter={(e) => e.currentTarget.style.borderColor = '#ff4d4d'}
+              onMouseLeave={(e) => e.currentTarget.style.borderColor = '#2f2f35'}
+            >
+              <div style={{ display:'flex', justifyContent:'space-between' }}>
+                <div style={{ color: '#adadb8', fontSize: '13px', marginBottom: '4px' }}>Đã chặn</div>
+                <StopOutlined style={{color:'#ff4d4d'}}/>
               </div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#ff4d4d' }}>{bannedUsers.length}</div>
+              <div style={{ fontSize: '11px', color: '#666', marginTop:'4px' }}>Nhấn để quản lý</div>
+            </div>
+          </div>
 
+          {/* Stream Info */}
+          <div style={{ background: '#1f1f23', padding: '20px', borderRadius: '8px', border: '1px solid #2f2f35' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  color: '#b0b3b8',
-                  marginBottom: '8px'
-                }}>Mô tả</label>
-                <div style={{
-                  fontSize: '13px',
-                  color: '#b0b3b8',
-                  lineHeight: '1.5'
-                }}>
-                  {liveDescription || 'Chưa có mô tả'}
-                </div>
+                <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', color: '#fff' }}>{room.title || "Chưa có tiêu đề"}</h2>
+                <p style={{ color: '#adadb8', whiteSpace: 'pre-wrap' }}>{room.description || "Chưa có mô tả"}</p>
               </div>
+              <Button icon={<SettingOutlined />} onClick={() => setIsEditModalVisible(true)}>Chỉnh sửa</Button>
             </div>
           </div>
         </div>
 
-        {/* Right Panel - Chat */}
-        <div style={{
-          width: '360px',
-          background: '#18191a',
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100vh',
-          position: 'sticky',
-          top: 0,
-          padding: '12px',
-          gap: '12px'
-        }}>
-          {/* Chat Section */}
-          <div style={{
-            background: '#242526',
-            borderRadius: '8px',
-            display: 'flex',
-            flexDirection: 'column',
-            flex: 1,
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '16px 20px',
-              borderBottom: '1px solid #3a3b3c'
-            }}>
-              <h3 style={{
-                margin: 0,
-                fontSize: '17px',
-                fontWeight: '600'
-              }}>Bình luận</h3>
-            </div>
-
-            <div className="chat-messages" ref={chatRef} style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '16px',
-              minHeight: '300px'
-            }}>
-              {messages.length === 0 ? (
-                <div style={{
-                  textAlign: 'center',
-                  color: '#b0b3b8',
-                  padding: '40px 20px'
-                }}>
-                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>💬</div>
-                  <div style={{ fontSize: '15px' }}>Chưa có bình luận nào từ người xem</div>
-                  <div style={{ fontSize: '13px', marginTop: '8px' }}>Bắt đầu cuộc trò chuyện</div>
-                </div>
-              ) : (
-                messages.map((msg, index) => (
-                  <div key={msg._id || index} style={{
-                    marginBottom: '16px',
-                    display: 'flex',
-                    gap: '10px',
-                    alignItems: 'flex-start'
-                  }}>
-                    <div style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      background: '#3a3b3c',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      fontSize: '16px'
-                    }}>👤</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        color: '#e4e6eb',
-                        marginBottom: '4px'
-                      }}>
-                        {msg.userId?.displayName || 'Melodyhub'}
-                      </div>
-                      <div style={{
-                        fontSize: '13px',
-                        color: msg.deleted ? '#65676b' : '#b0b3b8',
-                        fontStyle: msg.deleted ? 'italic' : 'normal'
-                      }}>
-                        {msg.deleted ? 'Tin nhắn này đã bị gỡ' : msg.message}
-                      </div>
-                      <div style={{
-                        fontSize: '12px',
-                        color: '#65676b',
-                        marginTop: '4px',
-                        display: 'flex',
-                        gap: '12px'
-                      }}>
-                        <span style={{ cursor: 'pointer' }}></span>
-                      </div>
-                    </div>
-                    {/* ✅ Fix: So sánh đúng với user?.user?.id */}
-                    {room.hostId._id === user?.user?.id && msg.userId._id !== user?.user?.id && !msg.deleted && (
-                      <Dropdown
-                        menu={{
-                          items: [
-                            { key: 'ban-delete', label: 'Ban và gỡ tin nhắn', icon: '🗑️' },
-                            { key: 'ban-mute', label: 'Ban không cho bình luận', icon: '🔇' },
-                          ],
-                          onClick: ({ key }) => {
-                            if (key === 'ban-delete') {
-                              handleBan(msg.userId._id, msg._id);
-                            } else if (key === 'ban-mute') {
-                              handleBanMute(msg.userId._id);
-                            }
-                          }
-                        }}
-                        trigger={['click']}
-                        placement="bottomRight"
-                      >
-                        <Button 
-                          type="text" 
-                          icon={<MoreOutlined />} 
-                          style={{ 
-                            padding: '4px 8px',
-                            color: '#b0b3b8',
-                            fontSize: '16px'
-                          }} 
-                        />
-                      </Dropdown>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div style={{
-              padding: '16px',
-              borderTop: '1px solid #3a3b3c',
-              position: 'relative'
-            }}>
-              {showPicker && (
-                <div style={{ 
-                  position: 'absolute', 
-                  bottom: '70px', 
-                  left: '16px',
-                  right: '16px',
-                  zIndex: 1000
-                }}>
-                  <EmojiPicker
-                    onEmojiClick={onEmojiClick}
-                    searchDisabled={true}
-                    previewConfig={{ showPreview: false }}
-                    height={350}
-                    width="100%"
-                    skinTonesDisabled
-                  />
-                </div>
-              )}
-              <form onSubmit={handleSendChat} style={{ 
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <button
-                  type="button" 
-                  onClick={() => setShowPicker(!showPicker)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '20px',
-                    padding: '8px',
-                    color: '#b0b3b8',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <SmileOutlined />
-                </button>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Viết bình luận..."
-                  style={{
-                    flex: 1,
-                    padding: '10px 40px 10px 12px',
-                    background: '#3a3b3c',
-                    color: '#e4e6eb',
-                    border: '1px solid #4a4b4c',
-                    borderRadius: '20px',
-                    fontSize: '15px',
-                    outline: 'none'
-                  }}
-                />
-                <button
-                  type="submit"
-                  style={{
-                    position: 'absolute',
-                    right: '8px',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '20px',
-                    padding: '8px',
-                    color: '#0084ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <SendOutlined />
-                </button>
-              </form>
-            </div>
+        {/* RIGHT: CHAT */}
+        <div style={{ width: '340px', background: '#18181b', borderLeft: '1px solid #2f2f35', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #2f2f35', fontWeight: '600', fontSize: '13px', textTransform: 'uppercase', color: '#adadb8', textAlign:'center' }}>
+            Trò chuyện
           </div>
 
-          {/* End Stream Section */}
-          <div style={{
-            background: '#242526',
-            borderRadius: '8px',
-            padding: '12px'
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              marginBottom: '12px',
-              color: '#b0b3b8'
-            }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: '#3a3b3c',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '16px'
-              }}>⏱️</div>
-              <div>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: '#e4e6eb' }}>{formatDuration(duration)}</div>
+          {/* Chat Messages */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 15px' }}>
+            {messages.map((msg, index) => (
+              <div key={msg._id || index} style={{ marginBottom: '8px', display: 'flex', gap: '8px', opacity: msg.deleted ? 0.5 : 1 }}>
+                <Avatar size={24} src={msg.userId?.avatarUrl} icon={<UserOutlined />} />
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
+                    <span style={{ fontWeight: '700', color: msg.userId?._id === room.hostId._id ? '#e91916' : '#adadb8', marginRight: '6px' }}>
+                      {msg.userId?.displayName || 'User'}
+                    </span>
+                    <span style={{ color: '#efeff1', wordWrap: 'break-word' }}>
+                      {msg.deleted ? <i>Tin nhắn đã bị xóa</i> : msg.message}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Mod Actions */}
+                {msg.userId?._id !== user?.user?.id && !msg.deleted && (
+                  <Dropdown 
+                    menu={{
+                      items: [
+                        { key: '1', label: 'Xóa tin nhắn & Ban', onClick: () => handleBanAction(msg.userId, msg._id, 'delete') },
+                        { key: '2', label: 'Chỉ cấm chat', onClick: () => handleBanAction(msg.userId, msg._id, 'mute') }
+                      ]
+                    }} 
+                    trigger={['click']}
+                  >
+                    <MoreOutlined style={{ color: '#adadb8', cursor: 'pointer', transform: 'rotate(90deg)' }} />
+                  </Dropdown>
+                )}
               </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <div style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: '#ff0000'
-                }}></div>
-                <span style={{ fontSize: '13px' }}>Đang ghi hình</span>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Chat Input */}
+          <div style={{ padding: '15px', borderTop: '1px solid #2f2f35', position: 'relative' }}>
+            {showEmojiPicker && (
+              <div style={{ position: 'absolute', bottom: '100%', right: '10px', zIndex: 10 }}>
+                <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" height={300} />
               </div>
-            </div>
-            <button
-              onClick={handleEndStream}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                background: '#ff4444',
-                border: 'none',
-                borderRadius: '6px',
-                color: 'white',
-                fontSize: '15px',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              Kết thúc video trực tiếp
-            </button>
+            )}
+            <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Input 
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Gửi tin nhắn..."
+                  style={{ borderRadius: '20px', background: '#2f2f35', border: 'none', color: '#fff', paddingRight: '30px' }}
+                />
+                <SmileOutlined 
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#adadb8', cursor: 'pointer', fontSize: '16px' }} 
+                />
+              </div>
+              <Button type="primary" shape="circle" icon={<SendOutlined />} htmlType="submit" disabled={!chatInput.trim()} />
+            </form>
           </div>
         </div>
       </div>
 
-      {/* Edit Details Popup */}
-      {showEditPopup && (
-        <div style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100%', 
-          height: '100%', 
-          background: 'rgba(0,0,0,0.7)', 
-          zIndex: 999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{ 
-            background: '#242526',
-            padding: '24px',
-            borderRadius: '8px',
-            width: '500px',
-            maxWidth: '90%'
-          }}>
-            <h3 style={{ 
-              margin: '0 0 20px 0',
-              fontSize: '20px',
-              fontWeight: '600',
-              color: '#e4e6eb'
-            }}>Chỉnh sửa chi tiết</h3>
-            
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleUpdateDetails({ 
-                title: e.target.title.value, 
-                description: descriptionText 
-              });
-            }}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ 
-                  display: 'block',
-                  marginBottom: '8px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  color: '#e4e6eb'
-                }}>Tiêu đề</label>
-                <input
-                  name="title"
-                  defaultValue={liveTitle}
-                  placeholder="Tiêu đề (bắt buộc)"
-                  required
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: '#3a3b3c',
-                    color: '#e4e6eb',
-                    border: '1px solid #4a4b4c',
-                    borderRadius: '6px',
-                    fontSize: '15px',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
+      {/* --- MODALS --- */}
+      
+      {/* Edit Info Modal */}
+      <Modal
+        title="Chỉnh sửa thông tin luồng"
+        open={isEditModalVisible}
+        onCancel={() => setIsEditModalVisible(false)}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={editForm} layout="vertical" onFinish={handleUpdateInfo}>
+          <Form.Item name="title" label="Tiêu đề" rules={[{ required: true }]}>
+            <Input placeholder="Nhập tiêu đề livestream" />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <TextArea rows={4} placeholder="Mô tả nội dung..." />
+          </Form.Item>
+          <Form.Item name="privacyType" label="Quyền riêng tư">
+            <Select>
+              <Option value="public">Công khai</Option>
+              <Option value="follow_only">Chỉ người theo dõi</Option>
+            </Select>
+          </Form.Item>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <Button onClick={() => setIsEditModalVisible(false)}>Hủy</Button>
+            <Button type="primary" htmlType="submit" loading={isSubmitting}>Lưu thay đổi</Button>
+          </div>
+        </Form>
+      </Modal>
 
-              <div style={{ marginBottom: '20px', position: 'relative' }}>
-                <div style={{ 
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '8px'
-                }}>
-                  <label style={{ 
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    color: '#e4e6eb'
-                  }}>Mô tả</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '20px',
-                      padding: '4px 8px',
-                      color: '#b0b3b8'
-                    }}
-                    title="Thêm emoji"
-                  >
-                    <SmileOutlined />
-                  </button>
-                </div>
-                <textarea
-                  name="description"
-                  value={descriptionText}
-                  onChange={(e) => setDescriptionText(e.target.value)}
-                  placeholder="Mô tả"
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: '#3a3b3c',
-                    color: '#e4e6eb',
-                    border: '1px solid #4a4b4c',
-                    borderRadius: '6px',
-                    fontSize: '15px',
-                    minHeight: '100px',
-                    resize: 'vertical',
-                    boxSizing: 'border-box',
-                    fontFamily: 'inherit'
-                  }}
-                />
-                {showEmojiPicker && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: '0',
-                    zIndex: 1000,
-                    marginTop: '8px'
-                  }}>
-                    <EmojiPicker
-                      onEmojiClick={(emojiObject) => {
-                        setDescriptionText(descriptionText + emojiObject.emoji);
-                      }}
-                      theme="dark"
-                      width={300}
-                      height={400}
-                    />
+      {/* Viewers Modal */}
+      <Modal
+        title={`Người xem (${viewersList.length})`}
+        open={isViewersModalVisible}
+        onCancel={() => setIsViewersModalVisible(false)}
+        footer={null}
+      >
+        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+          {viewersList.map(v => (
+            <div key={v._id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+              <Avatar src={v.avatarUrl} icon={<UserOutlined />} />
+              <div>
+                <div style={{ fontWeight: '600' }}>{v.displayName}</div>
+                <div style={{ fontSize: '12px', color: '#888' }}>@{v.username}</div>
+              </div>
+            </div>
+          ))}
+          {viewersList.length === 0 && <div style={{textAlign:'center', color:'#999'}}>Chưa có người xem</div>}
+        </div>
+      </Modal>
+
+      {/* 🛠️ FIX: Banned Users Modal - Nơi để Bỏ chặn (Unban) */}
+      <Modal
+        title={`Danh sách chặn (${bannedUsers.length})`}
+        open={isBannedModalVisible}
+        onCancel={() => setIsBannedModalVisible(false)}
+        footer={null}
+      >
+        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+          {bannedUsers.length === 0 ? (
+            <div style={{textAlign:'center', color:'#999', padding:'20px'}}>
+              Chưa có người dùng nào bị chặn
+            </div>
+          ) : (
+            bannedUsers.map(u => (
+              <div key={u._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Avatar src={u.avatarUrl} icon={<UserOutlined />} />
+                  <div>
+                    <div style={{ fontWeight: '600' }}>{u.displayName || u.username || 'User'}</div>
+                    <div style={{ fontSize: '12px', color: '#888' }}>{u.username ? `@${u.username}` : 'Blocked'}</div>
                   </div>
-                )}
-              </div>
-
-              <div style={{ 
-                display: 'flex',
-                gap: '12px',
-                justifyContent: 'flex-end'
-              }}>
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setShowEditPopup(false);
-                    setShowEmojiPicker(false);
-                  }}
-                  style={{
-                    padding: '10px 24px',
-                    background: '#3a3b3c',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#e4e6eb',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Hủy
-                </button>
-                <button 
-                  type="submit"
-                  disabled={isSubmitting}
-                  style={{
-                    padding: '10px 24px',
-                    background: isSubmitting ? '#4a4a4a' : '#0084ff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: 'white',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: isSubmitting ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isSubmitting ? 'Đang lưu...' : 'Lưu'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Viewers Popup */}
-      {showViewersPopup && (
-        <div style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100%', 
-          height: '100%', 
-          background: 'rgba(0,0,0,0.7)', 
-          zIndex: 999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{ 
-            background: '#242526',
-            padding: '24px',
-            borderRadius: '8px',
-            width: '400px',
-            maxWidth: '90%',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '20px'
-            }}>
-              <h3 style={{ 
-                margin: 0,
-                fontSize: '20px',
-                fontWeight: '600',
-                color: '#e4e6eb'
-              }}>Người xem • {viewers.length}</h3>
-              <button
-                onClick={() => setShowViewersPopup(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  fontSize: '24px',
-                  color: '#b0b3b8',
-                  cursor: 'pointer',
-                  padding: '0',
-                  lineHeight: '1'
-                }}
-              >
-                ×
-              </button>
-            </div>
-            
-            <div style={{
-              flex: 1,
-              overflowY: 'auto',
-              marginBottom: '16px'
-            }}>
-              {viewers.length === 0 ? (
-                <div style={{
-                  textAlign: 'center',
-                  color: '#b0b3b8',
-                  padding: '40px 20px'
-                }}>
-                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
-                  <div style={{ fontSize: '15px' }}>Chưa có người xem nào</div>
                 </div>
-              ) : (
-                viewers.map((viewer, index) => (
-                  <div key={viewer._id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px',
-                    background: '#3a3b3c',
-                    borderRadius: '8px',
-                    marginBottom: '8px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '50%',
-                        background: '#18191a',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '18px',
-                        color: '#e4e6eb',
-                        fontWeight: '600'
-                      }}>
-                        {index + 1}
-                      </div>
-                      <div style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '50%',
-                        background: viewer.avatarUrl ? `url(${viewer.avatarUrl})` : '#4a4b4c',
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '20px'
-                      }}>
-                        {!viewer.avatarUrl && '👤'}
-                      </div>
-                      <div>
-                        <div style={{
-                          fontSize: '15px',
-                          fontWeight: '600',
-                          color: '#e4e6eb'
-                        }}>
-                          {viewer.displayName || viewer.username}
-                        </div>
-                        {viewer.username && (
-                          <div style={{
-                            fontSize: '13px',
-                            color: '#b0b3b8'
-                          }}>
-                            @{viewer.username}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{
-                      fontSize: '14px',
-                      color: '#b0b3b8',
-                      textAlign: 'right'
-                    }}>
-                      {viewer.messageCount || 0}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+                <Button size="small" type="primary" danger ghost onClick={() => handleUnban(u._id)}>
+                  Bỏ chặn
+                </Button>
+              </div>
+            ))
+          )}
         </div>
-      )}
+      </Modal>
 
-      {/* Banned Users Popup */}
-      {showBannedUsersPopup && (
-        <div style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100%', 
-          height: '100%', 
-          background: 'rgba(0,0,0,0.7)', 
-          zIndex: 999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{ 
-            background: '#242526',
-            padding: '24px',
-            borderRadius: '8px',
-            width: '400px',
-            maxWidth: '90%',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '20px'
-            }}>
-              <h3 style={{ 
-                margin: 0,
-                fontSize: '20px',
-                fontWeight: '600',
-                color: '#e4e6eb'
-              }}>Người bị chặn • {bannedUsers.length}</h3>
-              <button
-                onClick={() => setShowBannedUsersPopup(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  fontSize: '24px',
-                  color: '#b0b3b8',
-                  cursor: 'pointer',
-                  padding: '0',
-                  lineHeight: '1'
-                }}
-              >
-                ×
-              </button>
-            </div>
-            
-            <div style={{
-              flex: 1,
-              overflowY: 'auto',
-              marginBottom: '16px'
-            }}>
-              {bannedUsers.length === 0 ? (
-                <div style={{
-                  textAlign: 'center',
-                  color: '#b0b3b8',
-                  padding: '40px 20px'
-                }}>
-                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>✅</div>
-                  <div style={{ fontSize: '15px' }}>Chưa có người dùng bị chặn</div>
-                </div>
-              ) : (
-                bannedUsers.map((bannedUser, index) => {
-                  const userId = bannedUser._id || bannedUser;
-                  const displayName = bannedUser.displayName || bannedUser.username || 'User';
-                  const username = bannedUser.username;
-                  
-                  return (
-                    <div key={userId} style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px',
-                      background: '#3a3b3c',
-                      borderRadius: '8px',
-                      marginBottom: '8px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '50%',
-                          background: '#4a4b4c',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '20px'
-                        }}>
-                          🚫
-                        </div>
-                        <div>
-                          <div style={{
-                            fontSize: '15px',
-                            fontWeight: '600',
-                            color: '#e4e6eb'
-                          }}>
-                            {displayName}
-                          </div>
-                          {username && (
-                            <div style={{
-                              fontSize: '13px',
-                              color: '#b0b3b8'
-                            }}>
-                              @{username}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleUnban(userId)}
-                        style={{
-                          padding: '6px 12px',
-                          background: '#0084ff',
-                          border: 'none',
-                          borderRadius: '6px',
-                          color: 'white',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Bỏ chặn
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
-    </>
   );
 };
 
