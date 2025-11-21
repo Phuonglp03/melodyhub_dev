@@ -2,6 +2,8 @@ import NodeMediaServer from 'node-media-server';
 import LiveRoom from '../models/LiveRoom.js';
 import { getSocketIo } from './socket.js'; // Import từ file socket.js
 import net from 'net';
+import fs from 'fs';
+import path from 'path';
 
 export const nodeMediaServer = () => {
   // Cấu hình chi tiết cho Node Media Server (Production-optimized)
@@ -39,10 +41,13 @@ export const nodeMediaServer = () => {
         {
           app: 'live',
           hls: true,
-          hlsFlags: '[hls_time=4:hls_list_size=4:hls_flags=delete_segments]',
-          hlsKeep: false, // Auto delete old segments to save disk space
-          dash: false,
-          dashFlags: '[f=dash:window_size=3:extra_window_size=5]'
+          // Cấu hình HLS cho livestream (không phải VOD)
+          // hls_time=2: Mỗi segment 2 giây
+          // hls_list_size=10: Giữ 10 segments (~20 giây buffer)
+          // hls_flags=delete_segments+append_list: Xóa segments cũ nhưng giữ playlist
+          hlsFlags: '[hls_time=2:hls_list_size=10:hls_flags=delete_segments+append_list]',
+          hlsKeep: true, // Giữ segments trong lúc live, xóa sau khi donePublish
+          dash: false
         }
       ]
     },
@@ -151,6 +156,15 @@ export const nodeMediaServer = () => {
         io.emit('stream-ended', { roomId: room._id, title: room.title });
         io.to(room._id.toString()).emit('stream-status-ended'); 
         console.log(`[NMS] Stream kết thúc (${room.status}), thông báo cho phòng: ${room._id}`);
+        
+        // Cleanup: Xóa HLS segments sau khi stream ended (sau 5 phút)
+        setTimeout(() => {
+          const streamDir = path.join(config.http.mediaroot, 'live', streamKey);
+          if (fs.existsSync(streamDir)) {
+            fs.rmSync(streamDir, { recursive: true, force: true });
+            console.log(`[NMS] Đã xóa stream directory: ${streamDir}`);
+          }
+        }, 5 * 60 * 1000); // 5 phút để viewers có thể xem replay nếu cần
       }
     } catch (err) {
       console.error(`[NMS] Lỗi khi cập nhật trạng thái 'ended': ${err.message}`);
