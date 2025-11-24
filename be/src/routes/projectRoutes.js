@@ -8,13 +8,18 @@ import {
   deleteProject,
   addLickToTimeline,
   updateTimelineItem,
+  bulkUpdateTimelineItems,
   deleteTimelineItem,
   updateChordProgression,
   addTrack,
   updateTrack,
   deleteTrack,
   getInstruments,
+  getRhythmPatterns,
+  applyRhythmPattern,
+  generateBackingTrack,
 } from "../controllers/projectController.js";
+import { generateAIBackingTrack } from "../controllers/sunoAIController.js";
 import middlewareController from "../middleware/auth.js";
 const { verifyToken } = middlewareController;
 
@@ -56,6 +61,12 @@ router.post(
 
 router.get("/", getUserProjects);
 
+// Get available instruments - MUST be before /:projectId route
+router.get("/instruments", getInstruments);
+
+// Get rhythm patterns - MUST be before /:projectId route
+router.get("/rhythm-patterns", getRhythmPatterns);
+
 router.get("/:projectId", getProjectById);
 
 router.put(
@@ -72,9 +83,6 @@ router.put(
 );
 
 router.delete("/:projectId", deleteProject);
-
-// Get available instruments
-router.get("/instruments", getInstruments);
 
 // Timeline operations
 router.post(
@@ -99,6 +107,23 @@ router.post(
   ],
   validate,
   addLickToTimeline
+);
+
+// Bulk update timeline items (for buffered autosave) - MUST be before /:itemId route
+router.put(
+  "/:projectId/timeline/items/bulk",
+  [
+    body("items")
+      .isArray()
+      .withMessage("items must be an array")
+      .notEmpty()
+      .withMessage("items array cannot be empty"),
+    // Each item should have either _id or itemId (handled in controller)
+    body("items.*._id").optional().isMongoId(),
+    body("items.*.itemId").optional().isMongoId(),
+  ],
+  validate,
+  bulkUpdateTimelineItems
 );
 
 router.put(
@@ -151,6 +176,38 @@ router.put(
 );
 
 router.delete("/:projectId/tracks/:trackId", deleteTrack);
+
+router.put(
+  "/:projectId/timeline/items/:itemId/apply-pattern",
+  [
+    body("rhythmPatternId").optional().isString(),
+  ],
+  validate,
+  applyRhythmPattern
+);
+
+// Backing track generation
+router.post(
+  "/:projectId/generate-backing",
+  [
+    body("chords")
+      .isArray()
+      .withMessage("chords must be an array")
+      .notEmpty()
+      .withMessage("chords array cannot be empty"),
+    body("instrumentId").optional().isMongoId(),
+    body("rhythmPatternId").optional().isString(),
+    body("chordDuration").optional().isInt({ min: 1, max: 16 }),
+  ],
+  validate,
+  generateBackingTrack
+);
+
+// Generate AI backing track with Suno
+router.post(
+  "/:projectId/generate-ai-backing",
+  generateAIBackingTrack
+);
 
 export default router;
 
