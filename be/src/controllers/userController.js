@@ -40,6 +40,13 @@ export const getCurrentUserProfile = async (req, res) => {
           displayName: user.displayName,
           birthday: user.birthday,
           gender: user.gender,
+          addressLine: user.addressLine,
+          provinceCode: user.provinceCode,
+          provinceName: user.provinceName,
+          districtCode: user.districtCode,
+          districtName: user.districtName,
+          wardCode: user.wardCode,
+          wardName: user.wardName,
           location: user.location,
           bio: user.bio,
           links: user.links || [],
@@ -301,7 +308,26 @@ export const updateUserProfile = async (req, res) => {
     console.log('📝 Update profile - req.body keys:', Object.keys(req.body || {}));
 
     // Parse body fields (có thể từ JSON hoặc multipart)
-    const { displayName, bio, birthday, avatarUrl, coverPhotoUrl, privacyProfile, theme, language, gender, location, links } = req.body;
+    const {
+      displayName,
+      bio,
+      birthday,
+      avatarUrl,
+      coverPhotoUrl,
+      privacyProfile,
+      theme,
+      language,
+      gender,
+      location,
+      links,
+      addressLine,
+      provinceCode,
+      provinceName,
+      districtCode,
+      districtName,
+      wardCode,
+      wardName
+    } = req.body;
 
     const user = await User.findById(userId);
     
@@ -364,6 +390,27 @@ export const updateUserProfile = async (req, res) => {
     if (language !== undefined) user.language = language;
     if (gender !== undefined) user.gender = gender;
     if (location !== undefined) user.location = location;
+    if (addressLine !== undefined) {
+      user.addressLine = typeof addressLine === 'string' ? addressLine.trim() : '';
+    }
+    if (provinceCode !== undefined) {
+      user.provinceCode = provinceCode ? provinceCode.toString() : '';
+    }
+    if (provinceName !== undefined) {
+      user.provinceName = typeof provinceName === 'string' ? provinceName.trim() : '';
+    }
+    if (districtCode !== undefined) {
+      user.districtCode = districtCode ? districtCode.toString() : '';
+    }
+    if (districtName !== undefined) {
+      user.districtName = typeof districtName === 'string' ? districtName.trim() : '';
+    }
+    if (wardCode !== undefined) {
+      user.wardCode = wardCode ? wardCode.toString() : '';
+    }
+    if (wardName !== undefined) {
+      user.wardName = typeof wardName === 'string' ? wardName.trim() : '';
+    }
     if (links !== undefined) {
       // Validate links là array và filter bỏ các link rỗng
       if (Array.isArray(links)) {

@@ -1,11 +1,18 @@
 import express from 'express';
 import { reportPost, getPostReports, checkPostReport, getAllReports, adminRestorePost, adminDeletePost } from '../../controllers/admin/reportController.js';
+import { getReportLimitSetting, updateReportLimitSetting } from '../../controllers/admin/reportSettingsController.js';
 import { verifyToken, isAdmin } from '../../middleware/auth.js';
 
 const router = express.Router();
 
 // Get all reports (admin only) - MUST be before parameterized routes
 router.get('/all', verifyToken, isAdmin, getAllReports);
+
+// Report settings (admin only)
+router
+  .route('/settings/report-limit')
+  .get(verifyToken, isAdmin, getReportLimitSetting)
+  .put(verifyToken, isAdmin, updateReportLimitSetting);
 
 // Report a post
 router.post('/posts/:postId', verifyToken, reportPost);

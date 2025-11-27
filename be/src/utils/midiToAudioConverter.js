@@ -314,6 +314,7 @@ export const generateAudioFromChords = async (chords, options = {}) => {
 
     // Convert Float32Array to WAV file buffer
     const wavBuffer = audioBufferToWav(audioBuffer, sampleRate);
+    console.log(`[Audio Generator] Generated WAV file size: ${(wavBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
     
     // Upload to Cloudinary
     try {

@@ -8,7 +8,8 @@ import {
   verifyEmail,
   resendOTP,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  changePassword
 } from '../controllers/authController.js';
 import { googleLogin } from '../controllers/googleAuthController.js';
 import authMiddleware from '../middleware/auth.js';
@@ -113,6 +114,21 @@ router.post(
       .withMessage('Mật khẩu phải có ít nhất 6 ký tự')
   ],
   resetPassword
+);
+
+// Đổi mật khẩu (yêu cầu đăng nhập)
+router.post(
+  '/change-password',
+  authMiddleware.verifyToken,
+  [
+    body('currentPassword')
+      .notEmpty()
+      .withMessage('Vui lòng nhập mật khẩu hiện tại'),
+    body('newPassword')
+      .isLength({ min: 6 })
+      .withMessage('Mật khẩu phải có ít nhất 6 ký tự')
+  ],
+  changePassword
 );
 
 export default router;
