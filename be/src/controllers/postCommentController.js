@@ -121,9 +121,15 @@ export const deletePostComment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Comment not found' });
     }
 
-    const isOwner = String(comment.userId) === String(requesterId);
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+
     const isAdmin = requesterRole === 'admin';
-    if (!isOwner && !isAdmin) {
+    const isPostOwner = String(post.userId) === String(requesterId);
+
+    if (!isAdmin && !isPostOwner) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 

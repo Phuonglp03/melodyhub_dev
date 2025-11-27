@@ -5,6 +5,7 @@ import PostComment from '../../models/PostComment.js';
 import mongoose from 'mongoose';
 import { createNotification } from '../../utils/notificationHelper.js';
 import { getSocketIo } from '../../config/socket.js';
+import { getReportLimit } from '../../services/reportSettingService.js';
 
 /**
  * Report a post
@@ -78,15 +79,17 @@ export const reportPost = async (req, res) => {
 
     await report.save();
 
-    // Check if post has 2 or more pending reports
+    // Check current pending reports count
     const pendingReportsCount = await ContentReport.countDocuments({
       targetContentType: 'post',
       targetContentId: postId,
       status: 'pending',
     });
 
-    // If 2 or more reports, automatically archive the post
-    if (pendingReportsCount >= 2 && !post.archived) {
+    const reportLimit = await getReportLimit();
+
+    // Automatically archive the post when reaching report limit
+    if (pendingReportsCount >= reportLimit && !post.archived) {
       post.archived = true;
       post.archivedAt = new Date();
       post.archivedByReports = true; // Mark as archived by reports
