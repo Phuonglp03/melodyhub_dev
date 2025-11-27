@@ -52,6 +52,7 @@ import tagRoutes from "./routes/tagRoutes.js";
 import playlistRoutes from "./routes/playlistRoutes.js";
 import projectRoutes from "./routes/projectRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
+import chordRoutes from "./routes/chordRoutes.js";
 
 import userManageRoute from "./routes/admin/userManageRoute.js";
 import createAdminRoute from "./routes/admin/createAdminRoute.js";
@@ -109,6 +110,7 @@ app.use("/api/dm", dmRoutes);
 app.use("/api/tags", tagRoutes);
 app.use("/api/playlists", playlistRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api/chords", chordRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/locations", locationRoutes);
 
@@ -116,7 +118,7 @@ app.use('/api/admin', userManageRoute);
 app.use('/api/admin', createAdminRoute);
 // 404 handler - must be after all routes
 app.use((req, res, next) => {
-  res.status(404).json({
+    res.status(404).json({
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`,
   });
