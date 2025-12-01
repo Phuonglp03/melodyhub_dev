@@ -69,6 +69,7 @@ const httpServer = http.createServer(app);
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false, // Allow postMessage for OAuth popups
     contentSecurityPolicy: false,
   })
 );

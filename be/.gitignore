@@ -7,3 +7,4 @@ uploads/
 coverage/
 media/
 temp/
+package-lock.json

@@ -11,6 +11,13 @@ import {
   getAllInstruments,
   getInstrumentById,
 } from "../services/instrumentService.js";
+import {
+  normalizeKeyPayload,
+  normalizeTimeSignaturePayload,
+  clampSwingAmount,
+  DEFAULT_KEY,
+  DEFAULT_TIME_SIGNATURE,
+} from "../utils/musicTheory.js";
 
 const TRACK_TYPES = ["audio", "midi", "backing"];
 const TIMELINE_ITEM_TYPES = ["lick", "chord", "midi"];
@@ -25,6 +32,34 @@ const normalizeTimelineItemType = (value, fallback = "lick") => {
   if (typeof value !== "string") return fallback;
   const normalized = value.toLowerCase();
   return TIMELINE_ITEM_TYPES.includes(normalized) ? normalized : fallback;
+};
+
+const ensureProjectCoreFields = (project) => {
+  if (!project) return;
+
+  const needsKeyNormalization =
+    !project.key ||
+    typeof project.key !== "object" ||
+    typeof project.key.root !== "number" ||
+    project.key.root < 0 ||
+    project.key.root > 11 ||
+    typeof project.key.scale !== "string";
+
+  if (needsKeyNormalization) {
+    project.key = normalizeKeyPayload(project.key);
+  }
+
+  const needsTimeSignatureNormalization =
+    !project.timeSignature ||
+    typeof project.timeSignature !== "object" ||
+    typeof project.timeSignature.numerator !== "number" ||
+    typeof project.timeSignature.denominator !== "number";
+
+  if (needsTimeSignatureNormalization) {
+    project.timeSignature = normalizeTimeSignaturePayload(
+      project.timeSignature
+    );
+  }
 };
 
 const sanitizeInstrumentPayload = (payload) => {
@@ -72,11 +107,40 @@ const sanitizeMidiEvents = (events) => {
     .filter(Boolean);
 };
 
+const clampTempo = (value, fallback = 120) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(300, Math.max(40, Math.round(numeric)));
+};
+
+const normalizeProjectResponse = (projectDoc) => {
+  if (!projectDoc) return projectDoc;
+  const plain =
+    typeof projectDoc.toObject === "function"
+      ? projectDoc.toObject()
+      : { ...projectDoc };
+  plain.key = normalizeKeyPayload(plain.key ?? DEFAULT_KEY);
+  plain.timeSignature = normalizeTimeSignaturePayload(
+    plain.timeSignature ?? DEFAULT_TIME_SIGNATURE
+  );
+  plain.swingAmount = clampSwingAmount(
+    plain.swingAmount !== undefined ? plain.swingAmount : 0
+  );
+  return plain;
+};
+
 // Create a new project
 export const createProject = async (req, res) => {
   try {
-    const { title, description, tempo, key, timeSignature, isPublic } =
-      req.body;
+    const {
+      title,
+      description,
+      tempo,
+      key,
+      timeSignature,
+      isPublic,
+      swingAmount,
+    } = req.body;
     const creatorId = req.userId;
 
     // Validate required fields (BR-21)
@@ -92,9 +156,12 @@ export const createProject = async (req, res) => {
       creatorId,
       title,
       description: description || "",
-      tempo: tempo || 120,
-      key: key || "",
-      timeSignature: timeSignature || "4/4",
+      tempo: clampTempo(tempo),
+      key: normalizeKeyPayload(key),
+      timeSignature: normalizeTimeSignaturePayload(timeSignature),
+      swingAmount: clampSwingAmount(
+        swingAmount !== undefined ? swingAmount : 0
+      ),
       status: "draft",
       isPublic: isPublic || false,
     });
@@ -128,7 +195,7 @@ export const createProject = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Project created successfully",
-      data: project,
+      data: normalizeProjectResponse(project),
     });
   } catch (error) {
     console.error("Error creating project:", error);
@@ -185,7 +252,7 @@ export const getUserProjects = async (req, res) => {
 
     res.json({
       success: true,
-      data: projects,
+      data: projects.map((project) => normalizeProjectResponse(project)),
     });
   } catch (error) {
     console.error("Error fetching user projects:", error);
@@ -262,7 +329,7 @@ export const getProjectById = async (req, res) => {
     res.json({
       success: true,
       data: {
-        project,
+        project: normalizeProjectResponse(project),
         tracks: tracksWithItems,
         collaborators,
         userRole: isOwner
@@ -318,9 +385,18 @@ export const updateProject = async (req, res) => {
     // Update fields
     if (title !== undefined) project.title = title;
     if (description !== undefined) project.description = description;
-    if (tempo !== undefined) project.tempo = tempo;
-    if (key !== undefined) project.key = key;
-    if (timeSignature !== undefined) project.timeSignature = timeSignature;
+    if (tempo !== undefined) {
+      project.tempo = clampTempo(tempo, project.tempo || 120);
+    }
+    if (key !== undefined) {
+      project.key = normalizeKeyPayload(key);
+    }
+    if (timeSignature !== undefined) {
+      project.timeSignature = normalizeTimeSignaturePayload(timeSignature);
+    }
+    if (req.body.swingAmount !== undefined) {
+      project.swingAmount = clampSwingAmount(req.body.swingAmount);
+    }
     if (isPublic !== undefined) project.isPublic = isPublic;
     if (status !== undefined) project.status = status;
     if (backingInstrumentId !== undefined) {
@@ -337,15 +413,101 @@ export const updateProject = async (req, res) => {
       project.backingInstrumentId = backingInstrumentId || null;
     }
 
+    ensureProjectCoreFields(project);
     await project.save();
 
     res.json({
       success: true,
       message: "Project updated successfully",
-      data: project,
+      data: normalizeProjectResponse(project),
     });
   } catch (error) {
     console.error("Error updating project:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update project",
+      error: error.message,
+    });
+  }
+};
+
+export const patchProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+    const updates = { ...req.body };
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({
+        success: false,
+        message: "No updates provided",
+      });
+    }
+
+    const clientVersion = updates.__version;
+    if (clientVersion !== undefined) {
+      delete updates.__version;
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (project.creatorId.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the project owner can update the project",
+      });
+    }
+
+    // Normalize and validate music theory fields before updating
+    if (updates.tempo !== undefined) {
+      updates.tempo = clampTempo(updates.tempo, project.tempo || 120);
+    }
+    if (updates.key !== undefined) {
+      updates.key = normalizeKeyPayload(updates.key);
+    }
+    if (updates.timeSignature !== undefined) {
+      updates.timeSignature = normalizeTimeSignaturePayload(
+        updates.timeSignature
+      );
+    }
+    if (updates.swingAmount !== undefined) {
+      updates.swingAmount = clampSwingAmount(updates.swingAmount);
+    }
+
+    let updatedProject;
+    if (clientVersion !== undefined) {
+      updatedProject = await Project.findOneAndUpdate(
+        { _id: projectId, version: clientVersion },
+        { $set: updates, $inc: { version: 1 } },
+        { new: true }
+      );
+      if (!updatedProject) {
+        return res.status(409).json({
+          success: false,
+          message: "Project version mismatch",
+        });
+      }
+    } else {
+      updatedProject = await Project.findByIdAndUpdate(
+        projectId,
+        { $set: updates, $inc: { version: 1 } },
+        { new: true }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: "Project updated successfully",
+      data: normalizeProjectResponse(updatedProject),
+    });
+  } catch (error) {
+    console.error("Error patching project:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update project",
@@ -1036,13 +1198,14 @@ export const updateChordProgression = async (req, res) => {
           .filter((name) => !!name)
       : [];
 
+    ensureProjectCoreFields(project);
     project.chordProgression = normalizedChords;
     await project.save();
 
     res.json({
       success: true,
       message: "Chord progression updated successfully",
-      data: project,
+      data: normalizeProjectResponse(project),
     });
   } catch (error) {
     console.error("Error updating chord progression:", error);
@@ -1466,17 +1629,25 @@ export const generateBackingTrack = async (req, res) => {
       });
     }
 
-    // Find or create backing track
+    // Find or create backing track - use dedicated fields only (no regex fallback)
     let backingTrack = await ProjectTrack.findOne({
       projectId: project._id,
-      trackType: "backing",
+      $or: [{ trackType: "backing" }, { isBackingTrack: true }],
     });
 
+    console.log(
+      `[Backing Track] Found existing backing track: ${!!backingTrack}, instrumentId provided: ${instrumentId}`
+    );
+
     if (!backingTrack) {
+      console.log(
+        `[Backing Track] Creating new backing track with instrumentId: ${instrumentId}`
+      );
       backingTrack = new ProjectTrack({
         projectId: project._id,
         trackName: "Backing Track",
         trackType: "backing",
+        isBackingTrack: true,
         trackOrder: 0,
         volume: 1.0,
         pan: 0.0,
@@ -1486,31 +1657,272 @@ export const generateBackingTrack = async (req, res) => {
         defaultRhythmPatternId: rhythmPatternId || undefined,
       });
       await backingTrack.save();
-    } else if (instrumentId || rhythmPatternId) {
-      // Update backing track instrument and pattern if provided
+      console.log(
+        `[Backing Track] Created new backing track with ID: ${
+          backingTrack._id
+        }, instrument: ${JSON.stringify(backingTrack.instrument)}`
+      );
+    } else {
+      // Always update instrument and pattern if provided (even if backing track already exists)
+      let needsUpdate = false;
       if (instrumentId) {
+        console.log(
+          `[Backing Track] Updating instrument from ${JSON.stringify(
+            backingTrack.instrument
+          )} to { instrumentId: ${instrumentId} }`
+        );
         backingTrack.instrument = { instrumentId };
+        needsUpdate = true;
       }
       if (rhythmPatternId) {
         backingTrack.defaultRhythmPatternId = rhythmPatternId;
+        needsUpdate = true;
       }
-      await backingTrack.save();
+      if (needsUpdate) {
+        await backingTrack.save();
+        console.log(
+          `[Backing Track] Updated backing track. New instrument: ${JSON.stringify(
+            backingTrack.instrument
+          )}`
+        );
+      }
     }
 
     // Get instrument for MIDI program number
     let instrumentProgram = 0; // Default: Acoustic Grand Piano
+    let instrumentDetails = null;
     if (instrumentId) {
-      const instrument = await Instrument.findById(instrumentId);
-      if (instrument && instrument.soundfontKey) {
-        // Map soundfont keys to MIDI program numbers
+      instrumentDetails = await Instrument.findById(instrumentId);
+      if (instrumentDetails) {
+        // Comprehensive map of soundfont keys to MIDI program numbers
         const programMap = {
+          // Piano family (0-7)
           acoustic_grand_piano: 0,
+          bright_acoustic_piano: 1,
+          electric_grand_piano: 2,
+          honky_tonk_piano: 3,
           electric_piano: 4,
+          electric_piano_1: 4,
+          electric_piano_2: 5,
+          electric_piano_dx7: 5,
+          clavinet: 7,
+
+          // Organ family (16-23)
+          drawbar_organ: 16,
+          hammond_organ: 16,
+          percussive_organ: 17,
+          rock_organ: 18,
+          church_organ: 19,
+
+          // Guitar family (24-31)
+          acoustic_guitar_nylon: 24,
+          acoustic_guitar_steel: 25,
+          electric_guitar_jazz: 26,
           electric_guitar_clean: 27,
+          electric_guitar_muted: 28,
+          overdriven_guitar: 29,
+          distorted_guitar: 30,
+          guitar_harmonics: 31,
+
+          // Bass family (32-39)
           acoustic_bass: 32,
+          electric_bass_finger: 33,
+          electric_bass_pick: 34,
+          fretless_bass: 35,
+          slap_bass_1: 36,
+          slap_bass_2: 37,
+          synth_bass_1: 38,
+          synth_bass_2: 39,
+
+          // Strings family (40-47)
+          violin: 40,
+          viola: 41,
+          cello: 42,
+          contrabass: 43,
+          tremolo_strings: 44,
+          pizzicato_strings: 45,
+          orchestral_harp: 46,
+          string_ensemble_1: 48,
+          string_ensemble_2: 49,
+          slow_strings: 50,
+          synth_strings_1: 51,
+          synth_strings_2: 52,
+          timpani: 47,
+
+          // Brass family (56-63)
+          trumpet: 56,
+          trombone: 57,
+          tuba: 58,
+          muted_trumpet: 59,
+          french_horn: 60,
+          brass_section: 61,
+          synth_brass_1: 62,
+          synth_brass_2: 63,
+
+          // Synth Lead (80-87)
           synth_lead: 80,
+          synth_lead_1: 80,
+          lead_1_square: 80,
+          synth_lead_2: 81,
+          lead_2_sawtooth: 81,
+          synth_lead_3: 82,
+          lead_3_calliope: 82,
+          synth_lead_4: 83,
+          lead_4_chiff: 83,
+          lead_5_charang: 84,
+          lead_6_voice: 85,
+          lead_7_fifths: 86,
+          lead_8_bass_lead: 87,
+
+          // Synth Pad (88-95)
+          percussion_standard: -1,
+          percussion_room: -1,
+          standard: -1,
+          drum_kit: -1,
+          drumset: -1,
+          synth_pad_1: 88,
+          pad_1_new_age: 88,
+          synth_pad_2: 89,
+          pad_2_warm: 89,
+          synth_pad_3: 90,
+          pad_3_polysynth: 90,
+          synth_pad_4: 91,
+          pad_4_choir: 91,
+          synth_pad_5: 92,
+          pad_5_bowed: 92,
+          synth_pad_6: 93,
+          pad_6_metallic: 93,
+          synth_pad_7: 94,
+          pad_7_halo: 94,
+          synth_pad_8: 95,
+          pad_8_sweep: 95,
+          ambient_pad: 92,
+          airy_pad: 92,
+          warm_pad: 89,
+          drone_pad: 92,
+          atmosphere_pad: 94,
+          halo_pad: 95,
+          sweep_pad: 95,
+          texture_pad: 92,
+          ambient_drone: 92,
+          dark_drone: 95,
+          soundscape_pad: 94,
         };
-        instrumentProgram = programMap[instrument.soundfontKey] || 0;
+
+        // Try to match by soundfontKey first
+        if (instrumentDetails.soundfontKey) {
+          const normalizedKey = instrumentDetails.soundfontKey.toLowerCase();
+          const key = normalizedKey.replace(/[^a-z0-9_]/g, "_");
+          instrumentProgram =
+            programMap[key] ||
+            programMap[instrumentDetails.soundfontKey] ||
+            (normalizedKey.includes("pad") ||
+            normalizedKey.includes("drone") ||
+            normalizedKey.includes("ambient") ||
+            normalizedKey.includes("atmosphere")
+              ? 92
+              : normalizedKey.includes("drum") ||
+                normalizedKey.includes("perc") ||
+                normalizedKey.includes("standard")
+              ? -1
+              : 0);
+        }
+
+        // Fallback: try to match by instrument name if soundfontKey didn't match
+        if (instrumentProgram === 0 && instrumentDetails.name) {
+          const nameLower = instrumentDetails.name.toLowerCase();
+
+          // Piano detection
+          if (nameLower.includes("piano")) {
+            if (nameLower.includes("electric")) {
+              instrumentProgram = 4;
+            } else {
+              instrumentProgram = 0;
+            }
+          }
+          // Guitar detection
+          else if (nameLower.includes("guitar")) {
+            if (nameLower.includes("acoustic")) {
+              instrumentProgram = 25;
+            } else if (
+              nameLower.includes("electric") ||
+              nameLower.includes("clean")
+            ) {
+              instrumentProgram = 27;
+            } else if (
+              nameLower.includes("distort") ||
+              nameLower.includes("overdrive")
+            ) {
+              instrumentProgram = 30;
+            } else {
+              instrumentProgram = 27;
+            }
+          }
+          // Bass detection
+          else if (nameLower.includes("bass")) {
+            if (nameLower.includes("acoustic")) {
+              instrumentProgram = 32;
+            } else if (nameLower.includes("electric")) {
+              instrumentProgram = 33;
+            } else if (nameLower.includes("synth")) {
+              instrumentProgram = 38;
+            } else {
+              instrumentProgram = 32;
+            }
+          }
+          // Pad / Drone detection
+          else if (
+            nameLower.includes("pad") ||
+            nameLower.includes("drone") ||
+            nameLower.includes("atmosphere") ||
+            nameLower.includes("ambient")
+          ) {
+            instrumentProgram = 92;
+          }
+          // Organ detection
+          else if (
+            nameLower.includes("drum") ||
+            nameLower.includes("kit") ||
+            nameLower.includes("percussion")
+          ) {
+            instrumentProgram = -1;
+          } else if (nameLower.includes("organ")) {
+            instrumentProgram = 16;
+          }
+          // Strings detection
+          else if (
+            nameLower.includes("violin") ||
+            nameLower.includes("string")
+          ) {
+            instrumentProgram = 40;
+          }
+          // Brass detection
+          else if (
+            nameLower.includes("trumpet") ||
+            nameLower.includes("brass")
+          ) {
+            instrumentProgram = 56;
+          }
+          // Synth detection
+          else if (nameLower.includes("synth")) {
+            if (nameLower.includes("pad")) {
+              instrumentProgram = 92;
+            } else if (nameLower.includes("lead")) {
+              instrumentProgram = 80;
+            } else {
+              instrumentProgram = 80;
+            }
+          }
+        }
+
+        console.log(
+          `[Backing Track] Instrument mapping: ${instrumentDetails.name} (soundfontKey: ${instrumentDetails.soundfontKey}) -> MIDI Program ${instrumentProgram}`
+        );
+        if (instrumentProgram === -1) {
+          console.log(
+            "[Backing Track] Instrument identified as percussion/drum kit"
+          );
+        }
       }
     }
 
@@ -1529,43 +1941,40 @@ export const generateBackingTrack = async (req, res) => {
     }
 
     // Generate audio directly from chords if generateAudio flag is set
-    // This is more efficient than converting MIDI to audio
-    // The audio generator will convert chord names to MIDI notes if needed
+    // Currently we use the existing JS synth-based renderer (midiToAudioConverter).
+    // Soundfont-based rendering is disabled because the required npm packages
+    // are not reliably available in the current environment.
     let audioFile = null;
     if (generateAudio) {
+      const cloudinaryFolder = `projects/${projectId}/backing_tracks`;
       try {
         console.log(
-          `[Backing Track] Generating audio from ${chords.length} chords...`
+          "[Backing Track] Using legacy waveform renderer (midiToAudioConverter)..."
         );
         const { convertMIDIToAudioAuto } = await import(
           "../utils/midiToAudioConverter.js"
         );
-        // Pass all chords - the converter will handle chord name to MIDI conversion
-        // Also pass rhythmPatternId to apply rhythm patterns
         audioFile = await convertMIDIToAudioAuto(chords, {
           tempo: project.tempo || 120,
           chordDuration,
           sampleRate: 44100,
-          uploadToCloud: true, // Upload to Cloudinary
-          cloudinaryFolder: `projects/${projectId}/backing_tracks`,
+          uploadToCloud: true,
+          cloudinaryFolder,
           projectId: project._id.toString(),
-          rhythmPatternId: rhythmPatternId, // Pass rhythm pattern to apply timing
+          rhythmPatternId,
+          instrumentId,
+          instrumentProgram,
         });
         console.log(
-          "[Backing Track] Audio generated and uploaded to Cloudinary:",
-          audioFile.cloudinaryUrl || audioFile.url
-        );
-        console.log(
-          "[Backing Track] Full audioFile object:",
-          JSON.stringify(audioFile, null, 2)
+          `[Backing Track] Audio generation completed. Success: ${!!audioFile}, URL: ${
+            audioFile?.cloudinaryUrl || audioFile?.url || "N/A"
+          }`
         );
       } catch (conversionError) {
         console.error(
           "[Backing Track] Audio generation failed:",
-          conversionError.message
+          conversionError
         );
-        console.error("[Backing Track] Error details:", conversionError);
-        // Continue with MIDI file if conversion fails - frontend will handle it
         console.warn(
           "[Backing Track] Falling back to MIDI file (may not play in browser)"
         );
@@ -1644,6 +2053,13 @@ export const generateBackingTrack = async (req, res) => {
       items.push(timelineItem);
     }
 
+    // Ensure backing track instrument is included in response
+    const backingTrackResponse = backingTrack.toObject();
+    console.log(`[Backing Track] Returning backing track with instrument:`, {
+      instrument: backingTrackResponse.instrument,
+      instrumentId: backingTrackResponse.instrument?.instrumentId,
+    });
+
     res.status(201).json({
       success: true,
       message:
@@ -1653,7 +2069,7 @@ export const generateBackingTrack = async (req, res) => {
               chords.length
             } chord clips`,
       data: {
-        track: backingTrack,
+        track: backingTrackResponse,
         items: items, // Return array of items for frontend
         midiFile: {
           filename: midiFile.filename,

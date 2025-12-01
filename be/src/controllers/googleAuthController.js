@@ -132,6 +132,7 @@ export const googleLogin = async (req, res) => {
       success: true,
       message: 'Login successful',
       token: accessToken,
+      refreshToken: refreshToken, // Return refreshToken in response for frontend storage
       user: userData,
     });
   } catch (error) {
