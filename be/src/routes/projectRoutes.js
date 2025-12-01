@@ -5,6 +5,7 @@ import {
   getUserProjects,
   getProjectById,
   updateProject,
+  patchProject,
   deleteProject,
   addLickToTimeline,
   updateTimelineItem,
@@ -53,7 +54,9 @@ router.post(
       .withMessage("Title must be between 1 and 200 characters"),
     body("description").optional().isLength({ max: 1000 }),
     body("tempo").optional().isInt({ min: 20, max: 300 }),
-    body("timeSignature").optional().matches(/^\d+\/\d+$/),
+    body("timeSignature")
+      .optional()
+      .matches(/^\d+\/\d+$/),
   ],
   validate,
   createProject
@@ -75,12 +78,18 @@ router.put(
     body("title").optional().trim().isLength({ min: 1, max: 200 }),
     body("description").optional().isLength({ max: 1000 }),
     body("tempo").optional().isInt({ min: 20, max: 300 }),
-    body("timeSignature").optional().matches(/^\d+\/\d+$/),
-    body("status").optional().isIn(["draft", "active", "completed", "inactive"]),
+    body("timeSignature")
+      .optional()
+      .matches(/^\d+\/\d+$/),
+    body("status")
+      .optional()
+      .isIn(["draft", "active", "completed", "inactive"]),
   ],
   validate,
   updateProject
 );
+
+router.patch("/:projectId", patchProject);
 
 router.delete("/:projectId", deleteProject);
 
@@ -154,9 +163,7 @@ router.put(
 // Track operations
 router.post(
   "/:projectId/tracks",
-  [
-    body("trackName").optional().trim().isLength({ min: 1, max: 100 }),
-  ],
+  [body("trackName").optional().trim().isLength({ min: 1, max: 100 })],
   validate,
   addTrack
 );
@@ -179,9 +186,7 @@ router.delete("/:projectId/tracks/:trackId", deleteTrack);
 
 router.put(
   "/:projectId/timeline/items/:itemId/apply-pattern",
-  [
-    body("rhythmPatternId").optional().isString(),
-  ],
+  [body("rhythmPatternId").optional().isString()],
   validate,
   applyRhythmPattern
 );
@@ -204,10 +209,6 @@ router.post(
 );
 
 // Generate AI backing track with Suno
-router.post(
-  "/:projectId/generate-ai-backing",
-  generateAIBackingTrack
-);
+router.post("/:projectId/generate-ai-backing", generateAIBackingTrack);
 
 export default router;
-
