@@ -69,7 +69,7 @@ export const nodeMediaServer = () => {
   };
 
   const nms = new NodeMediaServer(config);
-  
+  const pendingEndTimeouts = new Map();
 
   const checkServerConnection = (host, port) => {
     return new Promise((resolve) => {
@@ -91,41 +91,50 @@ export const nodeMediaServer = () => {
     });
   };
 
-  // === prePublish ===
   nms.on('prePublish', async (id, streamPath, args) => {
     console.log(`[NMS] prePublish: ${streamPath}`);
-
+  
     const parts = streamPath.split('/');
     const streamKey = parts[parts.length - 1];
     
     if (!streamKey) {
-      console.log(`[NMS] Từ chối: Không có stream key.`);
-      let session = nms.getSession(id);
+    let session = nms.getSession(id);
       if (session) session.reject();
       return;
     }
-    
+  
     try {
-      const room = await LiveRoom.findOne({ streamKey: streamKey, status: 'waiting' });
-      
-      if (!room) {
-        console.log(`[NMS] Từ chối: Stream key không hợp lệ hoặc phòng không 'waiting': ${streamKey}`);
+      // CHỈ REJECT NẾU ROOM KHÔNG TỒN TẠI HOẶC ĐÃ THẬT SỰ ENDED
+      const room = await LiveRoom.findOne({ 
+        streamKey: streamKey 
+      });
+  
+      if (!room || room.status === 'ended') {
+        console.log(`[NMS] Reject: Stream key không hợp lệ hoặc đã ended: ${streamKey}`);
         let session = nms.getSession(id);
         if (session) session.reject();
         return;
       }
-
-      console.log(`[NMS] Chấp nhận stream key: ${streamKey}`);
+  
+      // CHO PHÉP reconnect nếu room đang preview/live/waiting
+      console.log(`[NMS] Chấp nhận publish (có thể là reconnect): ${streamKey} - status: ${room.status}`);
+      // Nếu có timeout pending end → hủy ngay (vì đã reconnect thành công)
+      if (pendingEndTimeouts.has(streamKey)) {
+        clearTimeout(pendingEndTimeouts.get(streamKey));
+        pendingEndTimeouts.delete(streamKey);
+        console.log(`[NMS] Đã hủy pending end (reconnect thành công): ${streamKey}`);
+      }
+  
     } catch (err) {
-      console.error(`[NMS] Lỗi khi xác thực stream key: ${err.message}`);
+      console.error(`[NMS] Lỗi prePublish: ${err.message}`);
       let session = nms.getSession(id);
       if (session) session.reject();
     }
   });
-
-  // === postPublish ===
+  
+  // === postPublish === (giữ nguyên nhưng thêm log rõ hơn)
   nms.on('postPublish', async (id, streamPath, args) => {
-    console.log(`[NMS] postPublish: ${streamPath}`);
+    console.log(`[NMS] postPublish (stream ready/reconnect): ${streamPath}`);
     
     const parts = streamPath.split('/');
     const streamKey = parts[parts.length - 1];
@@ -134,53 +143,66 @@ export const nodeMediaServer = () => {
     try {
       const room = await LiveRoom.findOneAndUpdate(
         { streamKey: streamKey },
-        { status: 'preview', startedAt: new Date() },
+        { 
+          status: 'preview', 
+          startedAt: new Date(),
+          // Nếu muốn phân biệt live thật sự thì thêm field separate: broadcastStatus: 'live'
+        },
         { new: true }
       ).populate('hostId', 'displayName avatarUrl');
       
       if (room) {
         const hostSocketRoomId = room.hostId.toString();
+        // Emit ngay cả khi reconnect → host thấy preview lại ready → auto reload player
         io.to(hostSocketRoomId).emit('stream-preview-ready', room);
-        console.log(`[NMS] Đã gửi 'stream-preview-ready' đến host: ${hostSocketRoomId}`);
+        console.log(`[NMS] stream-preview-ready emitted (có thể là reconnect): ${streamKey}`);
       }
       
     } catch (err) {
-      console.error(`[NMS] Lỗi khi cập nhật trạng thái 'live': ${err.message}`);
+      console.error(`[NMS] Lỗi postPublish: ${err.message}`);
     }
   });
-
-  // === donePublish ===
+  
+  // === donePublish === (SỬA HOÀN TOÀN - KHÔNG END NGAY)
   nms.on('donePublish', async (id, streamPath, args) => {
     console.log(`[NMS] donePublish: ${streamPath}`);
-
+  
     const parts = streamPath.split('/');
     const streamKey = parts[parts.length - 1];
     const io = getSocketIo();
     
-    try {
-      const room = await LiveRoom.findOneAndUpdate(
-        { streamKey: streamKey, status: { $in: ['preview', 'live'] } },
-        { status: 'ended', endedAt: new Date() },
-        { new: true }
-      );
-      
-      if (room) {
-        io.emit('stream-ended', { roomId: room._id, title: room.title });
-        io.to(room._id.toString()).emit('stream-status-ended'); 
-        console.log(`[NMS] Stream kết thúc (${room.status}), thông báo cho phòng: ${room._id}`);
-        
-        // Cleanup: Xóa HLS segments sau khi stream ended (sau 5 phút)
-        setTimeout(() => {
+    // CHO PHÉP RECONNECT TRONG 45 GIÂY (tùy chỉnh thoải mái)
+    const RECONNECT_WINDOW = 45 * 1000; // 45 giây
+  
+    const timeout = setTimeout(async () => {
+      try {
+        const room = await LiveRoom.findOneAndUpdate(
+          { streamKey: streamKey },
+          { status: 'ended', endedAt: new Date() },
+          { new: true }
+        );
+  
+        if (room) {
+          io.emit('stream-ended', { roomId: room._id, title: room.title });
+          io.to(room._id.toString()).emit('stream-status-ended'); 
+          console.log(`[NMS] Stream thật sự ended sau ${RECONNECT_WINDOW/1000}s không reconnect: ${streamKey}`);
+  
+          // Cleanup segments (giữ nguyên logic cũ của bạn)
           const streamDir = path.join(config.http.mediaroot, 'live', streamKey);
           if (fs.existsSync(streamDir)) {
             fs.rmSync(streamDir, { recursive: true, force: true });
-            console.log(`[NMS] Đã xóa stream directory: ${streamDir}`);
+            console.log(`[NMS] Đã xóa segments: ${streamDir}`);
           }
-        }, 5 * 60 * 1000); // 5 phút để viewers có thể xem replay nếu cần
+        }
+      } catch (err) {
+        console.error(`[NMS] Lỗi khi end stream: ${err.message}`);
+      } finally {
+        pendingEndTimeouts.delete(streamKey);
       }
-    } catch (err) {
-      console.error(`[NMS] Lỗi khi cập nhật trạng thái 'ended': ${err.message}`);
-    }
+    }, RECONNECT_WINDOW);
+  
+    pendingEndTimeouts.set(streamKey, timeout);
+    console.log(`[NMS] Publisher disconnect → chờ ${RECONNECT_WINDOW/1000}s để end thật sự: ${streamKey}`);
   });
 
   nms.on('postPlay', (id, StreamPath, args) => {

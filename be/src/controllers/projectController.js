@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import Lick from "../models/Lick.js";
 import Instrument from "../models/Instrument.js";
 import PlayingPattern from "../models/PlayingPattern.js";
+import { uploadToCloudinary } from "../middleware/file.js";
 import {
   getAllInstruments,
   getInstrumentById,
@@ -105,6 +106,73 @@ const sanitizeMidiEvents = (events) => {
       };
     })
     .filter(Boolean);
+};
+
+// Helper: Convert bandSettings.style to rhythm pattern noteEvents
+// Maps style names to the hardcoded patterns from frontend ProjectBandEngine.js
+const styleToRhythmPattern = (style) => {
+  const stylePatterns = {
+    Swing: {
+      piano: [0, 2],
+      bass: [0, 2],
+      drums: { kick: [0], snare: [1, 3], hihat: [0, 1, 2, 3] },
+    },
+    Bossa: {
+      piano: [0, 1.5, 3],
+      bass: [0, 1.5, 2, 3.5],
+      drums: {
+        kick: [0, 2],
+        snare: [],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+    Latin: {
+      piano: [0, 0.5, 1.5, 2, 3],
+      bass: [0, 1, 2, 3],
+      drums: {
+        kick: [0, 2.5],
+        snare: [1, 3],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+    Ballad: {
+      piano: [0],
+      bass: [0, 2],
+      drums: { kick: [0], snare: [2], hihat: [0, 1, 2, 3] },
+    },
+    Funk: {
+      piano: [0, 0.5, 1.5, 2.5, 3],
+      bass: [0, 0.75, 1.5, 2, 2.75, 3.5],
+      drums: {
+        kick: [0, 1.5, 2.5],
+        snare: [1, 3],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+    Rock: {
+      piano: [0, 2],
+      bass: [0, 1, 2, 3],
+      drums: {
+        kick: [0, 2],
+        snare: [1, 3],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+  };
+
+  const pattern = stylePatterns[style] || stylePatterns.Swing;
+
+  // Convert pattern to noteEvents format for comping/rhythm instruments
+  // Use piano pattern as default rhythm pattern
+  const noteEvents = pattern.piano.map((beat) => ({
+    beat: Math.floor(beat),
+    subdivision: beat % 1,
+    velocity: 0.8,
+    duration: 0.5,
+    noteOffset: 0,
+  }));
+
+  return { noteEvents, beatsPerPattern: 4, patternType: "style" };
 };
 
 const clampTempo = (value, fallback = 120) => {
@@ -212,6 +280,7 @@ export const getUserProjects = async (req, res) => {
   try {
     const userId = req.userId;
     const { filter = "all" } = req.query; // "all", "my-projects", "collaborations"
+    const { status } = req.query; // Optional status filter: "draft", "active", "completed", "inactive"
 
     let matchQuery = {};
 
@@ -244,6 +313,20 @@ export const getUserProjects = async (req, res) => {
           { _id: { $in: projectIds } },
         ],
       };
+    }
+
+    // Add status filter if provided
+    // When using $or, we need to use $and to combine with status filter
+    if (status) {
+      if (matchQuery.$or) {
+        // If we have $or, wrap it with $and to combine with status
+        matchQuery = {
+          $and: [matchQuery, { status: status }],
+        };
+      } else {
+        // Otherwise, just add status directly
+        matchQuery.status = status;
+      }
     }
 
     const projects = await Project.find(matchQuery)
@@ -896,6 +979,632 @@ export const updateTimelineItem = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to update timeline item",
+      error: error.message,
+    });
+  }
+};
+
+// Get full project timeline for audio export (tracks + timeline items)
+export const getProjectTimelineForExport = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    // Debug: Log chord progression from database
+    console.log("(IS $) [FullMixExport] Project chord progression from DB:", {
+      projectId: project._id.toString(),
+      hasChordProgression: !!project.chordProgression,
+      chordProgressionType: Array.isArray(project.chordProgression)
+        ? "array"
+        : typeof project.chordProgression,
+      chordProgressionLength: Array.isArray(project.chordProgression)
+        ? project.chordProgression.length
+        : 0,
+      chordProgression: project.chordProgression,
+    });
+
+    const isOwner = project.creatorId.toString() === userId;
+    const collaborator = await ProjectCollaborator.findOne({
+      projectId: project._id,
+      userId: new mongoose.Types.ObjectId(userId),
+    });
+
+    if (!isOwner && (!collaborator || collaborator.role === "viewer")) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to export this project",
+      });
+    }
+
+    const tracks = await ProjectTrack.find({ projectId: project._id })
+      .sort({ trackOrder: 1, _id: 1 })
+      .lean();
+
+    const trackIds = tracks.map((t) => t._id);
+
+    console.log("(IS $) [FullMixExport] Found tracks:", {
+      count: tracks.length,
+      tracks: tracks.map((t) => ({
+        _id: String(t._id),
+        trackName: t.trackName,
+        trackType: t.trackType,
+        isBackingTrack: t.isBackingTrack,
+      })),
+      trackIds: trackIds.map((id) => String(id)),
+    });
+
+    const items = await ProjectTimelineItem.find({
+      trackId: { $in: trackIds },
+    })
+      .populate("lickId", "title audioUrl duration waveformData")
+      .sort({ startTime: 1, _id: 1 })
+      .lean();
+
+    console.log("(IS $) [FullMixExport] Found items:", {
+      count: items.length,
+      itemsByTrack: items.reduce((acc, item) => {
+        const trackId = String(item.trackId);
+        if (!acc[trackId]) acc[trackId] = [];
+        acc[trackId].push({
+          itemId: String(item._id),
+          type: item.type,
+          hasAudioUrl: !!item.audioUrl,
+          hasLickId: !!item.lickId,
+        });
+        return acc;
+      }, {}),
+    });
+
+    // Group items by trackId for easier consumption on the frontend
+    const itemsByTrackId = {};
+    let maxEndTime = 0;
+
+    // Debug: Log track IDs and item track IDs for matching
+    console.log(
+      "(IS $) [FullMixExport] Track IDs:",
+      trackIds.map((id) => String(id))
+    );
+    console.log(
+      "(IS $) [FullMixExport] Item track IDs:",
+      items.map((item) => ({
+        itemId: item._id,
+        trackId: String(item.trackId),
+        type: item.type,
+        hasAudioUrl: !!item.audioUrl,
+      }))
+    );
+
+    for (const item of items) {
+      const key = String(item.trackId);
+      if (!itemsByTrackId[key]) {
+        itemsByTrackId[key] = [];
+      }
+      const start = Number(item.startTime) || 0;
+      const duration = Number(item.duration) || 0;
+      const end = Math.max(0, start + duration);
+      if (end > maxEndTime) {
+        maxEndTime = end;
+      }
+
+      // Only include fields relevant for audio export to keep payload lean
+      itemsByTrackId[key].push({
+        _id: item._id,
+        trackId: item.trackId,
+        startTime: start,
+        duration,
+        offset: Number(item.offset) || 0,
+        loopEnabled: Boolean(item.loopEnabled),
+        playbackRate: Number(item.playbackRate) || 1,
+        type: item.type,
+        // If lickId is populated, include minimal nested audio info so the
+        // frontend full-mix exporter can resolve audio clips.
+        lickId: item.lickId
+          ? {
+              _id: item.lickId._id,
+              audioUrl: item.lickId.audioUrl || null,
+              waveformData: item.lickId.waveformData,
+              duration:
+                typeof item.lickId.duration === "number"
+                  ? item.lickId.duration
+                  : undefined,
+            }
+          : undefined,
+        sourceDuration:
+          typeof item.sourceDuration === "number"
+            ? item.sourceDuration
+            : undefined,
+        chordName: item.chordName,
+        rhythmPatternId: item.rhythmPatternId,
+        isCustomized: Boolean(item.isCustomized),
+        customMidiEvents: Array.isArray(item.customMidiEvents)
+          ? item.customMidiEvents
+          : [],
+        audioUrl: item.audioUrl || null,
+        waveformData: item.waveformData || null,
+      });
+    }
+
+    // Debug: Check items with licks that don't have audio
+    const itemsWithLicksNoAudio = items.filter(
+      (item) =>
+        item.lickId &&
+        (!item.lickId.audioUrl || item.lickId.audioUrl.trim() === "")
+    );
+
+    if (itemsWithLicksNoAudio.length > 0) {
+      console.warn(
+        "(IS $) [FullMixExport] Found items with licks missing audioUrl:",
+        {
+          count: itemsWithLicksNoAudio.length,
+          itemIds: itemsWithLicksNoAudio.map((i) => i._id),
+          lickIds: itemsWithLicksNoAudio
+            .map((i) => i.lickId?._id)
+            .filter(Boolean),
+        }
+      );
+    }
+
+    console.log("(IS $) [FullMixExport] Loaded timeline for project:", {
+      projectId: project._id.toString(),
+      trackCount: tracks.length,
+      itemCount: items.length,
+      itemsWithLicks: items.filter((i) => i.lickId).length,
+      itemsWithLicksNoAudio: itemsWithLicksNoAudio.length,
+      itemsByTrackIdKeys: Object.keys(itemsByTrackId),
+      itemsByTrackIdCounts: Object.entries(itemsByTrackId).map(
+        ([key, items]) => ({
+          trackId: key,
+          count: items.length,
+          types: items.map((i) => i.type),
+        })
+      ),
+      durationSeconds: maxEndTime,
+    });
+
+    // Ensure chordProgression is included (convert to plain object to ensure all fields are included)
+    const projectData = project.toObject ? project.toObject() : project;
+
+    // Explicitly get chordProgression - try multiple ways to access it
+    const chordProgression =
+      projectData.chordProgression ||
+      project.chordProgression ||
+      (project.get ? project.get("chordProgression") : null) ||
+      [];
+
+    console.log(
+      "(IS $) [FullMixExport] Preparing response with chordProgression:",
+      {
+        hasInPlain: !!projectData.chordProgression,
+        hasInDoc: !!project.chordProgression,
+        chordProgressionLength: Array.isArray(chordProgression)
+          ? chordProgression.length
+          : 0,
+        chordProgression: chordProgression,
+        projectDataKeys: Object.keys(projectData).filter(
+          (k) => k.includes("chord") || k.includes("Chord")
+        ),
+      }
+    );
+
+    // Include band settings in response
+    const projectPlain = project.toObject ? project.toObject() : project;
+
+    const responseData = {
+      success: true,
+      data: {
+        project: {
+          id: project._id,
+          title: project.title,
+          tempo: project.tempo,
+          key: project.key,
+          timeSignature: project.timeSignature,
+          status: project.status,
+          chordProgression: chordProgression, // Explicitly include
+          swingAmount: project.swingAmount,
+          bandSettings:
+            projectPlain.bandSettings || project.bandSettings || null,
+        },
+        timeline: {
+          durationSeconds: maxEndTime,
+          tracks,
+          itemsByTrackId,
+        },
+      },
+    };
+
+    console.log("(IS $) [FullMixExport] Response project object:", {
+      hasChordProgression: !!responseData.data.project.chordProgression,
+      chordProgressionLength: Array.isArray(
+        responseData.data.project.chordProgression
+      )
+        ? responseData.data.project.chordProgression.length
+        : 0,
+      chordProgression: responseData.data.project.chordProgression,
+    });
+
+    return res.json(responseData);
+  } catch (error) {
+    console.error("Error loading project timeline for export:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load project timeline for export",
+      error: error.message,
+    });
+  }
+};
+
+// Save exported project audio metadata (audioUrl, waveformData, duration)
+export const exportProjectAudio = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+    const { audioUrl, audioDuration, waveformData } = req.body || {};
+
+    if (!audioUrl || typeof audioUrl !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "audioUrl is required and must be a string",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID format",
+      });
+    }
+
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const isOwner = project.creatorId.toString() === userId;
+    const collaborator = await ProjectCollaborator.findOne({
+      projectId: project._id,
+      userId: new mongoose.Types.ObjectId(userId),
+    });
+
+    if (!isOwner && (!collaborator || collaborator.role === "viewer")) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You do not have permission to save export data for this project",
+      });
+    }
+
+    // Apply metadata to project
+    project.audioUrl = audioUrl;
+
+    if (typeof audioDuration === "number" && audioDuration > 0) {
+      project.audioDuration = audioDuration;
+    }
+
+    if (Array.isArray(waveformData) && waveformData.length) {
+      project.waveformData = waveformData.map((v) => Number(v) || 0);
+    }
+
+    project.exportedAt = new Date();
+
+    await project.save();
+
+    console.log("(IS $) [ProjectExport] Saved export metadata:", {
+      projectId: project._id.toString(),
+      hasAudioUrl: !!project.audioUrl,
+      hasWaveform: Array.isArray(project.waveformData),
+      audioDuration: project.audioDuration,
+      exportedAt: project.exportedAt,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Project export metadata saved successfully",
+      data: {
+        projectId: project._id,
+        audioUrl: project.audioUrl,
+        audioDuration: project.audioDuration,
+        waveformData: project.waveformData,
+        exportedAt: project.exportedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error saving project export metadata:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to save project export metadata",
+      error: error.message,
+    });
+  }
+};
+
+// Lightweight collaboration state for a project (used by routes `/collab/state`)
+export const getProjectCollabState = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID format",
+      });
+    }
+
+    const project = await Project.findById(projectId).populate(
+      "creatorId",
+      "username displayName avatarUrl"
+    );
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const collaborators = await ProjectCollaborator.find({
+      projectId: project._id,
+    })
+      .populate("userId", "username displayName avatarUrl")
+      .lean();
+
+    const isOwner = project.creatorId?._id?.toString() === userId;
+    const currentUserCollab = collaborators.find(
+      (c) => c.userId && c.userId._id.toString() === userId
+    );
+
+    const role = isOwner ? "owner" : currentUserCollab?.role || "viewer";
+
+    const response = {
+      project: {
+        id: project._id,
+        title: project.title,
+        status: project.status,
+        isPublic: project.isPublic,
+      },
+      currentUser: {
+        userId,
+        isOwner,
+        role,
+      },
+      collaborators: collaborators.map((c) => ({
+        id: c._id,
+        role: c.role,
+        user: c.userId
+          ? {
+              id: c.userId._id,
+              username: c.userId.username,
+              displayName: c.userId.displayName || c.userId.username,
+              avatarUrl: c.userId.avatarUrl,
+            }
+          : null,
+      })),
+    };
+
+    console.log("(IS $) [CollabState] Project collaboration state:", {
+      projectId: project._id.toString(),
+      currentUserId: userId,
+      isOwner,
+      collaboratorCount: collaborators.length,
+      role,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: response,
+    });
+  } catch (error) {
+    console.error("Error getting project collaboration state:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load project collaboration state",
+      error: error.message,
+    });
+  }
+};
+
+// Debug endpoint for project collaboration state
+export const getProjectCollabDebug = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID format",
+      });
+    }
+
+    const project = await Project.findById(projectId).populate(
+      "creatorId",
+      "username displayName email avatarUrl"
+    );
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const collaborators = await ProjectCollaborator.find({
+      projectId: project._id,
+    })
+      .populate("userId", "username displayName email avatarUrl")
+      .lean();
+
+    const currentUserCollab = collaborators.find(
+      (c) => c.userId && c.userId._id.toString() === userId
+    );
+
+    const isOwner = project.creatorId?._id?.toString() === userId;
+
+    const debugPayload = {
+      project: {
+        id: project._id,
+        title: project.title,
+        status: project.status,
+        isPublic: project.isPublic,
+        creator: project.creatorId
+          ? {
+              id: project.creatorId._id,
+              username: project.creatorId.username,
+              displayName:
+                project.creatorId.displayName || project.creatorId.username,
+              email: project.creatorId.email,
+            }
+          : null,
+      },
+      collaborators: collaborators.map((c) => ({
+        id: c._id,
+        role: c.role,
+        user: c.userId
+          ? {
+              id: c.userId._id,
+              username: c.userId.username,
+              displayName: c.userId.displayName || c.userId.username,
+              email: c.userId.email,
+            }
+          : null,
+      })),
+      currentUser: {
+        userId,
+        isOwner,
+        role: isOwner ? "owner" : currentUserCollab?.role || "none",
+      },
+    };
+
+    console.log("(IS $) [CollabDebug] Project collaboration debug:", {
+      projectId: project._id.toString(),
+      currentUserId: userId,
+      isOwner,
+      collaboratorCount: collaborators.length,
+      currentUserRole: debugPayload.currentUser.role,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: debugPayload,
+    });
+  } catch (error) {
+    console.error("Error getting project collaboration debug info:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load project collaboration debug info",
+      error: error.message,
+    });
+  }
+};
+
+// Handle uploaded full-mix audio file for a project
+export const uploadProjectAudioFile = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No audio file provided",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID format",
+      });
+    }
+
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const isOwner = project.creatorId.toString() === userId;
+    const collaborator = await ProjectCollaborator.findOne({
+      projectId: project._id,
+      userId: new mongoose.Types.ObjectId(userId),
+    });
+
+    if (!isOwner && (!collaborator || collaborator.role === "viewer")) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to upload audio for this project",
+      });
+    }
+
+    console.log("(NO $) [DEBUG][ProjectExportUpload] Incoming audio file:", {
+      projectId,
+      userId,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+
+    const folder = `melodyhub/projects/${projectId}/exports`;
+    let uploadResult;
+
+    try {
+      uploadResult = await uploadToCloudinary(req.file.buffer, folder, "video");
+    } catch (err) {
+      console.error(
+        "(IS $) [ProjectExportUpload] Cloudinary upload failed:",
+        err
+      );
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload audio to cloud storage",
+        error: err.message,
+      });
+    }
+
+    console.log("(IS $) [ProjectExportUpload] Uploaded audio to Cloudinary:", {
+      projectId,
+      publicId: uploadResult.public_id,
+      secureUrl: uploadResult.secure_url,
+      duration: uploadResult.duration,
+      bytes: uploadResult.bytes,
+      format: uploadResult.format,
+      resourceType: uploadResult.resource_type,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Project audio uploaded successfully",
+      data: {
+        publicId: uploadResult.public_id,
+        url: uploadResult.secure_url,
+        secure_url: uploadResult.secure_url,
+        cloudinaryUrl: uploadResult.secure_url,
+        duration: uploadResult.duration,
+        bytes: uploadResult.bytes,
+        format: uploadResult.format,
+        resourceType: uploadResult.resource_type,
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading project audio file:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to upload project audio file",
       error: error.message,
     });
   }
@@ -1616,6 +2325,30 @@ export const generateBackingTrack = async (req, res) => {
       });
     }
 
+    // Require bandSettings for audio generation
+    if (generateAudio) {
+      const hasBandSettings =
+        project.bandSettings?.members &&
+        project.bandSettings.members.length > 0;
+
+      if (!hasBandSettings) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "bandSettings with at least one member is required for backing track audio generation. Please configure your band settings first.",
+        });
+      }
+
+      // Require bandSettings.style for rhythm pattern
+      if (!project.bandSettings?.style) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "bandSettings.style is required for backing track audio generation. Please set a style (Swing, Bossa, Latin, Ballad, Funk, or Rock).",
+        });
+      }
+    }
+
     const isOwner = project.creatorId.toString() === userId;
     const collaborator = await ProjectCollaborator.findOne({
       projectId: project._id,
@@ -1947,24 +2680,398 @@ export const generateBackingTrack = async (req, res) => {
     let audioFile = null;
     if (generateAudio) {
       const cloudinaryFolder = `projects/${projectId}/backing_tracks`;
+
+      // bandSettings is required for audio generation (validated above)
+      // Extract instruments from band members
+      let finalInstrumentId = null; // Will be extracted per-member
+      let finalRhythmPatternId = null; // Will come from bandSettings.style
+      let finalInstrumentProgram = instrumentProgram;
+
+      const hasBandSettings =
+        project.bandSettings?.members &&
+        project.bandSettings.members.length > 0;
+
+      console.log(
+        "(IS $) [Backing Track] Using bandSettings - extracting instruments from members"
+      );
+
+      // Extract from band members
+      if (hasBandSettings) {
+        console.log(
+          "(IS $) [Backing Track] Extracting settings from band members..."
+        );
+
+        // Find comping or rhythm member (typically used for backing track)
+        const compingMember = project.bandSettings.members.find(
+          (m) => m.role === "comping" || m.role === "rhythm"
+        );
+
+        if (compingMember) {
+          console.log(
+            `(IS $) [Backing Track] Found comping/rhythm member: ${compingMember.name} (${compingMember.type}, ${compingMember.role})`
+          );
+
+          // Extract instrument from band member
+          if (compingMember.soundBank) {
+            try {
+              const Instrument = (await import("../models/Instrument.js"))
+                .default;
+              const foundInstrument = await Instrument.findOne({
+                soundfontKey: compingMember.soundBank,
+              });
+              if (foundInstrument) {
+                finalInstrumentId = foundInstrument._id;
+                console.log(
+                  `(IS $) [Backing Track] ✓ Extracted instrument from band: ${foundInstrument.name} (${compingMember.soundBank})`
+                );
+              }
+            } catch (err) {
+              console.warn(
+                "(IS $) [Backing Track] Could not lookup instrument from soundBank:",
+                err.message
+              );
+            }
+          }
+
+          // Extract rhythm pattern if member has one
+          // Note: Band members might have rhythmPatternId stored, but we'll use the project's default
+          // or look for it in the member's properties if available
+        }
+
+        // Convert bandSettings.style to rhythm pattern if available
+        if (project.bandSettings?.style && !finalRhythmPatternId) {
+          const stylePattern = styleToRhythmPattern(project.bandSettings.style);
+          console.log(
+            `(IS $) [Backing Track] Converted style "${project.bandSettings.style}" to rhythm pattern with ${stylePattern.noteEvents.length} events`
+          );
+          // Style pattern will be passed via bandSettings to audio generator
+        }
+
+        // If no comping member, try to get from first non-muted member
+        if (!compingMember) {
+          const activeMember = project.bandSettings.members.find(
+            (m) => !m.isMuted
+          );
+          if (activeMember && activeMember.soundBank) {
+            try {
+              const Instrument = (await import("../models/Instrument.js"))
+                .default;
+              const foundInstrument = await Instrument.findOne({
+                soundfontKey: activeMember.soundBank,
+              });
+              if (foundInstrument) {
+                finalInstrumentId = foundInstrument._id;
+                console.log(
+                  `(IS $) [Backing Track] ✓ Extracted instrument from first active member: ${foundInstrument.name}`
+                );
+              }
+            } catch (err) {
+              console.warn(
+                "(IS $) [Backing Track] Could not lookup instrument:",
+                err.message
+              );
+            }
+          }
+        }
+      }
+
+      // Define activeBandMembers (non-muted members) for audio generation
+      const activeBandMembers =
+        project.bandSettings?.members?.filter((m) => !m.isMuted) || [];
+
+      // Log band settings and project settings
+      console.log(
+        "(IS $) [Backing Track] Project settings for audio generation:",
+        {
+          projectId: project._id.toString(),
+          tempo: project.tempo || 120,
+          key: project.key,
+          timeSignature: project.timeSignature,
+          swingAmount: project.swingAmount,
+          bandSettings: project.bandSettings || null,
+          bandSettingsStyle: project.bandSettings?.style,
+          bandSettingsSwingAmount: project.bandSettings?.swingAmount,
+          bandSettingsMembers: project.bandSettings?.members?.length || 0,
+          activeBandMembers: activeBandMembers.length,
+          bandMembers: activeBandMembers.map((m) => ({
+            type: m.type,
+            role: m.role,
+            soundBank: m.soundBank,
+            name: m.name,
+            volume: m.volume,
+          })),
+          chordCount: chords.length,
+          chordDuration,
+        }
+      );
+
       try {
         console.log(
-          "[Backing Track] Using legacy waveform renderer (midiToAudioConverter)..."
+          "[Backing Track] Generating individual backing tracks for each chord, then consolidating..."
         );
         const { convertMIDIToAudioAuto } = await import(
           "../utils/midiToAudioConverter.js"
         );
-        audioFile = await convertMIDIToAudioAuto(chords, {
+        const { consolidateAudioFiles } = await import(
+          "../utils/audioConsolidator.js"
+        );
+
+        // Build audio generation params - bandSettings is required, so never include instrumentId/rhythmPatternId
+        const audioGenParams = {
           tempo: project.tempo || 120,
           chordDuration,
           sampleRate: 44100,
           uploadToCloud: true,
           cloudinaryFolder,
           projectId: project._id.toString(),
-          rhythmPatternId,
-          instrumentId,
-          instrumentProgram,
+          instrumentProgram: finalInstrumentProgram,
+          // bandSettings is required for audio generation
+          bandSettings: project.bandSettings,
+          swingAmount:
+            project.swingAmount ||
+            project.bandSettings?.swingAmount ||
+            undefined,
+        };
+
+        console.log("(IS $) [Backing Track] Audio generation parameters:", {
+          ...audioGenParams,
+          bandSettings: audioGenParams.bandSettings ? "present" : "missing",
+          bandSettingsMembers:
+            audioGenParams.bandSettings?.members?.length || 0,
+          bandMembersDetails: audioGenParams.bandSettings?.members?.map(
+            (m) => ({
+              type: m.type,
+              role: m.role,
+              soundBank: m.soundBank,
+            })
+          ),
         });
+
+        // Generate backing track for EACH chord, with EACH band member mixed together
+        console.log(
+          `(IS $) [Backing Track] Generating ${chords.length} chords × ${
+            activeBandMembers.length
+          } members = ${
+            chords.length * activeBandMembers.length
+          } individual tracks...`
+        );
+        const chordAudioFiles = [];
+
+        // Import chord name to MIDI converter
+        const { chordNameToMidiNotes } = await import(
+          "../utils/midiToAudioConverter.js"
+        );
+
+        for (let i = 0; i < chords.length; i++) {
+          const chord = chords[i];
+          // Ensure chord has chordName - chords array might just be strings
+          const chordName =
+            typeof chord === "string"
+              ? chord
+              : chord.chordName || chord.name || `Chord ${i + 1}`;
+
+          // Convert string chord to object with MIDI notes
+          let chordObj;
+          if (typeof chord === "string") {
+            // Convert chord name to MIDI notes
+            const midiNotes = chordNameToMidiNotes(chordName);
+            chordObj = {
+              chordName: chordName,
+              name: chordName,
+              midiNotes: midiNotes,
+            };
+            console.log(
+              `(IS $) [Backing Track] Converted chord "${chordName}" to MIDI notes:`,
+              midiNotes
+            );
+          } else {
+            // Ensure existing chord object has MIDI notes
+            if (!chordObj.midiNotes || chordObj.midiNotes.length === 0) {
+              const midiNotes = chordNameToMidiNotes(chordName);
+              chordObj = { ...chord, midiNotes: midiNotes };
+              console.log(
+                `(IS $) [Backing Track] Added MIDI notes to chord "${chordName}":`,
+                midiNotes
+              );
+            } else {
+              chordObj = chord;
+            }
+          }
+
+          console.log(
+            `(IS $) [Backing Track] Processing chord ${i + 1}/${
+              chords.length
+            }: ${chordName}`
+          );
+
+          // Generate audio for each band member for this chord
+          const memberAudioFiles = [];
+
+          for (let j = 0; j < activeBandMembers.length; j++) {
+            const member = activeBandMembers[j];
+            console.log(
+              `(IS $) [Backing Track]   Generating track for member ${j + 1}/${
+                activeBandMembers.length
+              }: ${member.name} (${member.type}, ${member.role}, soundBank: ${
+                member.soundBank
+              })`
+            );
+
+            try {
+              // Look up instrument from soundBank
+              let memberInstrumentId = null;
+              let memberInstrumentProgram = 0;
+
+              if (member.soundBank) {
+                try {
+                  const Instrument = (await import("../models/Instrument.js"))
+                    .default;
+                  const foundInstrument = await Instrument.findOne({
+                    soundfontKey: member.soundBank,
+                  });
+                  if (foundInstrument) {
+                    memberInstrumentId = foundInstrument._id;
+                    memberInstrumentProgram = foundInstrument.program || 0;
+                    console.log(
+                      `(IS $) [Backing Track]     Found instrument: ${foundInstrument.name} (program: ${memberInstrumentProgram})`
+                    );
+                  }
+                } catch (err) {
+                  console.warn(
+                    `(IS $) [Backing Track]     Could not lookup instrument for ${member.soundBank}:`,
+                    err.message
+                  );
+                }
+              }
+
+              // Generate audio for this chord + member combination
+              const memberAudio = await convertMIDIToAudioAuto([chordObj], {
+                tempo: project.tempo || 120,
+                chordDuration,
+                sampleRate: 44100,
+                uploadToCloud: true,
+                cloudinaryFolder: `${cloudinaryFolder}/chords/${i}/members`, // Organize by chord and member
+                projectId: project._id.toString(),
+                // Don't pass rhythmPatternId when using style-based pattern
+                rhythmPatternId: project.bandSettings?.style
+                  ? null
+                  : finalRhythmPatternId,
+                instrumentId: memberInstrumentId || finalInstrumentId,
+                instrumentProgram:
+                  memberInstrumentProgram || finalInstrumentProgram,
+                bandSettings: project.bandSettings || undefined,
+                swingAmount:
+                  project.swingAmount ||
+                  project.bandSettings?.swingAmount ||
+                  undefined,
+                // Apply member volume
+                volume: member.volume || 0.8,
+              });
+
+              if (
+                memberAudio &&
+                (memberAudio.url || memberAudio.cloudinaryUrl)
+              ) {
+                memberAudioFiles.push({
+                  url: memberAudio.url,
+                  cloudinaryUrl: memberAudio.cloudinaryUrl || memberAudio.url,
+                  memberName: member.name,
+                  memberType: member.type,
+                  memberRole: member.role,
+                  volume: member.volume || 0.8,
+                });
+                console.log(
+                  `(IS $) [Backing Track]     ✓ Generated ${member.name} track for ${chordName}`
+                );
+              } else {
+                console.warn(
+                  `(IS $) [Backing Track]     ✗ Failed to generate ${member.name} track for ${chordName}`
+                );
+              }
+            } catch (memberError) {
+              console.error(
+                `(IS $) [Backing Track]     Error generating ${member.name} track:`,
+                memberError.message
+              );
+            }
+          }
+
+          // Mix all member tracks for this chord into one
+          if (memberAudioFiles.length > 0) {
+            console.log(
+              `(IS $) [Backing Track]   Mixing ${memberAudioFiles.length} member tracks for ${chordName}...`
+            );
+            try {
+              const { consolidateAudioFiles } = await import(
+                "../utils/audioConsolidator.js"
+              );
+              const mixedChordAudio = await consolidateAudioFiles(
+                memberAudioFiles.map((m, idx) => ({
+                  ...m,
+                  chordName: `${chordName} - ${m.memberName}`,
+                  index: idx,
+                })),
+                {
+                  cloudinaryFolder: `${cloudinaryFolder}/chords`,
+                  projectId: project._id.toString(),
+                  tempo: project.tempo || 120,
+                  chordDuration,
+                  mixMode: true, // Mix mode: overlay all tracks instead of sequential
+                }
+              );
+
+              if (
+                mixedChordAudio &&
+                (mixedChordAudio.url || mixedChordAudio.cloudinaryUrl)
+              ) {
+                chordAudioFiles.push({
+                  url: mixedChordAudio.url,
+                  cloudinaryUrl:
+                    mixedChordAudio.cloudinaryUrl || mixedChordAudio.url,
+                  chordName: chordName,
+                  index: i,
+                });
+                console.log(
+                  `(IS $) [Backing Track]   ✓ Mixed ${memberAudioFiles.length} members into chord ${chordName} track`
+                );
+              }
+            } catch (mixError) {
+              console.error(
+                `(IS $) [Backing Track]   Error mixing members for ${chordName}:`,
+                mixError.message
+              );
+            }
+          }
+        }
+
+        console.log(
+          `(IS $) [Backing Track] Generated ${chordAudioFiles.length}/${chords.length} chord backing tracks`
+        );
+
+        // Consolidate all chord audio files into one
+        if (chordAudioFiles.length > 0) {
+          console.log(
+            `(IS $) [Backing Track] Consolidating ${chordAudioFiles.length} chord backing tracks into one file...`
+          );
+          audioFile = await consolidateAudioFiles(chordAudioFiles, {
+            cloudinaryFolder,
+            projectId: project._id.toString(),
+            tempo: project.tempo || 120,
+            chordDuration,
+          });
+          console.log(
+            `(IS $) [Backing Track] ✓ Consolidated backing track created: ${
+              audioFile?.cloudinaryUrl || audioFile?.url || "N/A"
+            }`
+          );
+        } else {
+          // Fallback: generate all chords together if individual generation failed
+          console.warn(
+            "(IS $) [Backing Track] No individual chord tracks generated, falling back to single file generation..."
+          );
+          audioFile = await convertMIDIToAudioAuto(chords, audioGenParams);
+        }
+
         console.log(
           `[Backing Track] Audio generation completed. Success: ${!!audioFile}, URL: ${
             audioFile?.cloudinaryUrl || audioFile?.url || "N/A"
@@ -2111,20 +3218,254 @@ export const getInstruments = async (req, res) => {
   }
 };
 
-// Get rhythm patterns
-// export const getRhythmPatterns = async (req, res) => {
-//   try {
-//     const patterns = await PlayingPattern.find().sort({ name: 1 });
-//     res.json({
-//       success: true,
-//       data: patterns,
-//     });
-//   } catch (error) {
-//     console.error("Error fetching rhythm patterns:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch rhythm patterns",
-//       error: error.message,
-//     });
-//   }
-// };
+// Invite collaborator by email
+export const inviteCollaborator = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { email, role = "contributor" } = req.body;
+    const inviterId = req.userId;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const isOwner = project.creatorId.toString() === inviterId;
+    const inviterCollab = await ProjectCollaborator.findOne({
+      projectId: project._id,
+      userId: inviterId,
+    });
+
+    const inviterRole = isOwner ? "owner" : inviterCollab?.role;
+    if (!isOwner && inviterRole !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only the project owner or an admin can invite collaborators",
+      });
+    }
+
+    const targetUser = await User.findOne({ email: normalizedEmail });
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User with this email was not found",
+      });
+    }
+
+    if (targetUser._id.toString() === inviterId) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot invite yourself as a collaborator",
+      });
+    }
+
+    let collaborator = await ProjectCollaborator.findOne({
+      projectId: project._id,
+      userId: targetUser._id,
+    });
+
+    if (!collaborator) {
+      collaborator = new ProjectCollaborator({
+        projectId: project._id,
+        userId: targetUser._id,
+        role,
+        status: "accepted",
+      });
+    } else {
+      collaborator.role = role;
+      if (collaborator.status !== "accepted") {
+        collaborator.status = "accepted";
+      }
+    }
+
+    await collaborator.save();
+    await collaborator.populate(
+      "userId",
+      "username displayName avatarUrl email"
+    );
+
+    console.log("(IS $) [CollabInvite] Collaborator invited/updated:", {
+      projectId: project._id.toString(),
+      inviterId,
+      invitedUserId: targetUser._id.toString(),
+      role: collaborator.role,
+      status: collaborator.status,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Collaborator ${
+        targetUser.displayName || targetUser.username || normalizedEmail
+      } added as ${role}`,
+      data: collaborator,
+    });
+  } catch (error) {
+    console.error("Error inviting collaborator:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to invite collaborator",
+      error: error.message,
+    });
+  }
+};
+
+// Remove collaborator from project
+export const removeCollaborator = async (req, res) => {
+  try {
+    const { projectId, userId } = req.params;
+    const requesterId = req.userId;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const isOwner = project.creatorId.toString() === requesterId;
+    const requesterCollab = await ProjectCollaborator.findOne({
+      projectId: project._id,
+      userId: requesterId,
+    });
+
+    const requesterRole = isOwner ? "owner" : requesterCollab?.role;
+    if (!isOwner && requesterRole !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only the project owner or an admin can remove collaborators",
+      });
+    }
+
+    if (userId === project.creatorId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot remove the project owner",
+      });
+    }
+
+    const collab = await ProjectCollaborator.findOneAndDelete({
+      projectId: project._id,
+      userId,
+    });
+
+    if (!collab) {
+      return res.status(404).json({
+        success: false,
+        message: "Collaborator not found on this project",
+      });
+    }
+
+    console.log("(IS $) [CollabInvite] Collaborator removed:", {
+      projectId: project._id.toString(),
+      removedUserId: userId,
+      requesterId,
+    });
+
+    return res.json({
+      success: true,
+      message: "Collaborator removed successfully",
+      data: { userId },
+    });
+  } catch (error) {
+    console.error("Error removing collaborator:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to remove collaborator",
+      error: error.message,
+    });
+  }
+};
+
+// Accept invitation
+export const acceptInvitation = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+
+    const collab = await ProjectCollaborator.findOne({
+      projectId,
+      userId,
+    });
+
+    if (!collab) {
+      return res.status(404).json({
+        success: false,
+        message: "Invitation not found",
+      });
+    }
+
+    collab.status = "accepted";
+    await collab.save();
+
+    console.log("(IS $) [CollabInvite] Invitation accepted:", {
+      projectId,
+      userId,
+    });
+
+    return res.json({
+      success: true,
+      message: "Invitation accepted",
+      data: collab,
+    });
+  } catch (error) {
+    console.error("Error accepting invitation:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to accept invitation",
+      error: error.message,
+    });
+  }
+};
+
+// Decline invitation
+export const declineInvitation = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.userId;
+
+    const collab = await ProjectCollaborator.findOne({
+      projectId,
+      userId,
+    });
+
+    if (!collab) {
+      return res.status(404).json({
+        success: false,
+        message: "Invitation not found",
+      });
+    }
+
+    collab.status = "declined";
+    await collab.save();
+
+    console.log("(IS $) [CollabInvite] Invitation declined:", {
+      projectId,
+      userId,
+    });
+
+    return res.json({
+      success: true,
+      message: "Invitation declined",
+      data: collab,
+    });
+  } catch (error) {
+    console.error("Error declining invitation:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to decline invitation",
+      error: error.message,
+    });
+  }
+};

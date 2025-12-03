@@ -4,6 +4,9 @@ import User from '../models/User.js';
 import PostLike from '../models/PostLike.js';
 import PostComment from '../models/PostComment.js';
 import Lick from '../models/Lick.js';
+import UserFollow from '../models/UserFollow.js';
+import Project from '../models/Project.js';
+import ProjectCollaborator from '../models/ProjectCollaborator.js';
 import { uploadToCloudinary } from '../middleware/file.js';
 
 // Helper function to detect media type from mimetype
@@ -115,6 +118,52 @@ export const createPost = async (req, res) => {
 
         validatedAttachedLickIds = objectIds;
       }
+    }
+
+    // Validate projectId if provided
+    let validatedProjectId = null;
+    if (req.body.projectId) {
+      const projectIdInput = req.body.projectId;
+      if (!mongoose.Types.ObjectId.isValid(projectIdInput)) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID của project không hợp lệ',
+        });
+      }
+
+      const project = await Project.findById(projectIdInput);
+      if (!project) {
+        return res.status(404).json({
+          success: false,
+          message: 'Project không tồn tại',
+        });
+      }
+
+      // Check if project is active
+      if (project.status !== 'active') {
+        return res.status(400).json({
+          success: false,
+          message: 'Chỉ có thể chọn project có trạng thái active',
+        });
+      }
+
+      // Check if user is the owner or collaborator
+      const isOwner = project.creatorId.toString() === userId.toString();
+      if (!isOwner) {
+        // Check if user is a collaborator
+        const collaborator = await ProjectCollaborator.findOne({
+          projectId: project._id,
+          userId: userId,
+        });
+        if (!collaborator) {
+          return res.status(403).json({
+            success: false,
+            message: 'Bạn chỉ có thể chọn project mà bạn sở hữu hoặc là cộng tác viên',
+          });
+        }
+      }
+
+      validatedProjectId = new mongoose.Types.ObjectId(projectIdInput);
     }
 
     // Validate userId from token
@@ -234,6 +283,7 @@ export const createPost = async (req, res) => {
       linkPreview: linkPreviewInput,
       media: mediaArray.length > 0 ? mediaArray : undefined,
       originalPostId,
+      projectId: validatedProjectId,
       moderationStatus: 'approved', // Default to approved
       attachedLicks: validatedAttachedLickIds !== null ? validatedAttachedLickIds : undefined,
     });
@@ -244,6 +294,7 @@ export const createPost = async (req, res) => {
     const populatedPost = await Post.findById(savedPost._id)
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
+      .populate('projectId', 'title description coverImageUrl status')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .lean();
 
@@ -275,23 +326,45 @@ export const getPosts = async (req, res) => {
     if (req.userId && mongoose.Types.ObjectId.isValid(req.userId)) {
       currentUserIdObj = new mongoose.Types.ObjectId(req.userId);
     }
+
+    // Lấy danh sách user mà current user đang follow (để ưu tiên trong feed)
+    let followingIds = [];
+    if (currentUserIdObj) {
+      const followingDocs = await UserFollow.find({
+        followerId: currentUserIdObj,
+      })
+        .select('followingId')
+        .lean();
+      followingIds = followingDocs.map((doc) => doc.followingId).filter(Boolean);
+    }
+    const hasFollowing = currentUserIdObj && followingIds.length > 0;
+
     // Include legacy posts that may not have moderationStatus field
     // Exclude archived posts
+    // NEW: Nếu có currentUserIdObj thì loại trừ các bài của chính user đó khỏi community feed
+    const visibilityAndConditions = [
+      {
+        $or: [
+          { moderationStatus: 'approved' },
+          { moderationStatus: { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { archived: false },
+          { archived: { $exists: false } },
+        ],
+      },
+    ];
+
+    if (currentUserIdObj) {
+      visibilityAndConditions.push({
+        userId: { $ne: currentUserIdObj },
+      });
+    }
+
     const visibilityFilter = {
-      $and: [
-        {
-          $or: [
-            { moderationStatus: 'approved' },
-            { moderationStatus: { $exists: false } },
-          ],
-        },
-        {
-          $or: [
-            { archived: false },
-            { archived: { $exists: false } },
-          ],
-        },
-      ],
+      $and: visibilityAndConditions,
     };
 
     // Get collection names from models to ensure correctness
@@ -302,8 +375,27 @@ export const getPosts = async (req, res) => {
     if (process.env.NODE_ENV === 'development') {
       console.log('[getPosts] Using collections:', { postLikesCollection, postCommentsCollection });
     }
-    
-    // Use aggregation pipeline to sort by likes + comments count
+
+    // Xác định stage sort dựa trên việc user có follow ai không:
+    // - Nếu có following: ưu tiên bài của người đang follow (isFollowed = true) mới đến bài khác.
+    //   Trong mỗi nhóm, sort theo thời gian tạo (mới nhất trước), sau đó mới đến engagementScore.
+    // - Nếu không có following: giữ nguyên logic cũ, sort theo engagementScore rồi createdAt.
+    const sortStage = hasFollowing
+      ? {
+          $sort: {
+            isFollowed: -1,
+            createdAt: -1,
+            engagementScore: -1,
+          },
+        }
+      : {
+          $sort: {
+            engagementScore: -1,
+            createdAt: -1,
+          },
+        };
+
+    // Use aggregation pipeline to sort by follow priority + likes + comments
     const pipeline = [
       // Match posts with visibility filter
       { $match: visibilityFilter },
@@ -363,42 +455,57 @@ export const getPosts = async (req, res) => {
           }
         }
       },
-      
+
       // Check if current user has liked this post (if userId is available)
-      ...(currentUserIdObj ? [{
-        $lookup: {
-          from: postLikesCollection,
-          let: { 
-            postId: '$_id', 
-            currentUserId: currentUserIdObj
-          },
-          pipeline: [
+      ...(currentUserIdObj
+        ? [
             {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', '$$currentUserId'] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: 'userLike'
-        }
-      }, {
-        $addFields: {
-          isLiked: { $gt: [{ $size: '$userLike' }, 0] }
-        }
-      }] : []),
-      
-      // Sort by engagement score (descending), then by createdAt (descending)
-      {
-        $sort: {
-          engagementScore: -1,
-          createdAt: -1
-        }
-      },
+              $lookup: {
+                from: postLikesCollection,
+                let: {
+                  postId: '$_id',
+                  currentUserId: currentUserIdObj,
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$postId', '$$postId'] },
+                          { $eq: ['$userId', '$$currentUserId'] },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: 'userLike',
+              },
+            },
+            {
+              $addFields: {
+                isLiked: { $gt: [{ $size: '$userLike' }, 0] },
+              },
+            },
+          ]
+        : []),
+
+      // Đánh dấu bài viết của người mà current user đang follow (nếu có)
+      ...(hasFollowing
+        ? [
+            {
+              $addFields: {
+                // userId ở thời điểm này vẫn là ObjectId gốc,
+                // so sánh trực tiếp với mảng ObjectId followingIds
+                isFollowed: {
+                  $cond: [{ $in: ['$userId', followingIds] }, true, false],
+                },
+              },
+            },
+          ]
+        : []),
+
+      // Sort theo ưu tiên follow + thời gian + engagement
+      sortStage,
       
       // Skip and limit for pagination
       { $skip: skip },
@@ -515,7 +622,7 @@ export const getPosts = async (req, res) => {
       });
     }
 
-    // Get total count for pagination
+    // Get total count for pagination (sử dụng cùng visibilityFilter, nên cũng không đếm bài của chính user)
     const totalPosts = await Post.countDocuments(visibilityFilter);
     const totalPages = Math.ceil(totalPosts / limit);
 
@@ -583,6 +690,7 @@ export const getPostsByUser = async (req, res) => {
     })
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
+      .populate('projectId', 'title description coverImageUrl status')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -627,6 +735,7 @@ export const getPostById = async (req, res) => {
     const post = await Post.findById(postId)
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
+      .populate('projectId', 'title description coverImageUrl status')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .lean();
 
@@ -782,6 +891,7 @@ export const updatePost = async (req, res) => {
     const populatedPost = await Post.findById(updatedPost._id)
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
+      .populate('projectId', 'title description coverImageUrl status')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .lean();
 
@@ -1009,6 +1119,7 @@ export const getArchivedPosts = async (req, res) => {
     })
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
+      .populate('projectId', 'title description coverImageUrl status')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .sort({ archivedAt: -1 })
       .skip(skip)

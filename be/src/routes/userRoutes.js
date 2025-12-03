@@ -11,7 +11,8 @@ import {
   followUser,
   unfollowUser,
   getFollowSuggestions,
-  getFollowingList
+  getFollowingList,
+  searchUsers
 } from '../controllers/userController.js';
 import middlewareController from '../middleware/auth.js';
 const { verifyToken, optionalVerifyToken } = middlewareController;
@@ -72,7 +73,9 @@ const validateProfileUpdate = [
     .trim()
     .isLength({ max: 100 })
     .withMessage('Location must be less than 100 characters')
-    .matches(/^[a-zA-Z0-9\s\u00C0-\u1EF9\-_,.()]+$/)
+    // Cho phép thêm một số ký tự thường dùng trong địa chỉ VN như "/" và "#"
+    // Ví dụ: "12/3 Lý Thường Kiệt, P.5, Q.10"
+    .matches(/^[a-zA-Z0-9\s\u00C0-\u1EF9\-_,.()\/#]+$/)
     .withMessage('Location contains invalid characters'),
     
   body('privacyProfile')
@@ -131,6 +134,9 @@ router.get('/following', verifyToken, getFollowingList);
 
 // GET /api/users/suggestions/list - Suggested users to follow (requires authentication)
 router.get('/suggestions/list', verifyToken, getFollowSuggestions);
+
+// GET /api/users/search?q=... - Search users by name or username (public, but parse token if provided)
+router.get('/search', optionalVerifyToken, searchUsers);
 
 // GET /api/users/:userId - Get user profile by user ID (public, but parse token if provided)
 // MUST be after specific routes like /following and /suggestions/list

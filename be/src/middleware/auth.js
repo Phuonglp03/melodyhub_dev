@@ -3,7 +3,7 @@ import User from '../models/User.js';
 import { verifyToken as verifyJWT } from '../utils/jwt.js';
 
 // Middleware xác thực token
-export const verifyToken = (req, res, next) => {
+export const verifyToken = async (req, res, next) => {
   // Lấy token từ header Authorization (case-insensitive)
   const authHeader = req.headers.authorization || req.headers.Authorization;
   
@@ -46,11 +46,21 @@ export const verifyToken = (req, res, next) => {
       return res.status(403).json({ message: 'Token không hợp lệ hoặc đã hết hạn' });
     }
 
+    // Kiểm tra xem user có bị khóa không
+    const userId = decoded.userId || decoded.id;
+    const user = await User.findById(userId).select('isActive email');
+    console.log('[verifyToken] Checking user isActive:', user?.email, 'isActive:', user?.isActive);
+    if (!user || !user.isActive) {
+      console.log('[verifyToken] User account is locked or not found:', user?.email);
+      return res.status(403).json({ 
+        message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.' 
+      });
+    }
+
     // Lưu thông tin user vào request để sử dụng ở các middleware khác
-    req.userId = decoded.userId || decoded.id;
+    req.userId = userId;
     req.userRole = decoded.roleId || decoded.role;
     
-    console.log('[verifyToken] Token verified successfully. userId:', req.userId);
     next();
   } catch (error) {
     console.error('[verifyToken] Token verification error:', error.message);
@@ -59,11 +69,41 @@ export const verifyToken = (req, res, next) => {
 };
 
 // Middleware kiểm tra quyền admin
-export const isAdmin = (req, res, next) => {
-  if (req.userRole !== 'admin') {
-    return res.status(403).json({ message: 'Yêu cầu quyền admin' });
+export const isAdmin = async (req, res, next) => {
+  try {
+    // If userRole is already set and is 'admin', allow access
+    if (req.userRole && req.userRole.toLowerCase() === 'admin') {
+      return next();
+    }
+    
+    // If userRole is not set or not 'admin', check database to be sure
+    if (req.userId) {
+      const User = (await import('../models/User.js')).default;
+      const user = await User.findById(req.userId).select('roleId');
+      
+      if (user && user.roleId === 'admin') {
+        // Update req.userRole for consistency
+        req.userRole = 'admin';
+        return next();
+      }
+      
+      return res.status(403).json({ 
+        success: false,
+        message: 'Yêu cầu quyền admin' 
+      });
+    }
+    
+    return res.status(403).json({ 
+      success: false,
+      message: 'Yêu cầu quyền admin' 
+    });
+  } catch (error) {
+    console.error('Error checking admin role:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Lỗi kiểm tra quyền admin' 
+    });
   }
-  next();
 };
 
 // Middleware kiểm tra quyền user thông thường

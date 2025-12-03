@@ -6,18 +6,20 @@ import {
   getUnreadNotificationCount,
   deleteNotification
 } from '../controllers/notificationController.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, optionalVerifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Tất cả các route đều yêu cầu authentication
+// Route đếm thông báo chưa đọc:
+// - Nếu có token hợp lệ: trả về số lượng chưa đọc của user đó.
+// - Nếu không có / token không hợp lệ: không ném lỗi, chỉ trả unreadCount = 0.
+router.get('/unread/count', optionalVerifyToken, getUnreadNotificationCount);
+
+// Tất cả các route còn lại đều yêu cầu authentication
 router.use(verifyToken);
 
 // GET /api/notifications - Lấy danh sách thông báo
 router.get('/', getNotifications);
-
-// GET /api/notifications/unread/count - Lấy số lượng thông báo chưa đọc
-router.get('/unread/count', getUnreadNotificationCount);
 
 // PUT /api/notifications/:notificationId/read - Đánh dấu thông báo là đã đọc
 router.put('/:notificationId/read', markNotificationAsRead);

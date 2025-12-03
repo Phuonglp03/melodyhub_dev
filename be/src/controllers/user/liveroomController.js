@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
+import mongoose from 'mongoose';
 import LiveRoom from '../../models/LiveRoom.js';
 import UserFollow from '../../models/UserFollow.js';
+import ContentReport from '../../models/ContentReport.js';
 import { getSocketIo } from '../../config/socket.js';
 import RoomChat from '../../models/RoomChat.js';
 import User from '../../models/User.js';
@@ -9,8 +11,22 @@ export const createLiveStream = async (req, res) => {
   const { title, description, privacyType } = req.body;
   const hostId = req.userId;
 
-
   try {
+    // Kiểm tra xem user có bị cấm livestream không
+    const user = await User.findById(hostId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+    }
+    
+    if (user.livestreamBanned) {
+      return res.status(403).json({ 
+        message: 'Bạn đã bị cấm phát livestream do vi phạm quy định cộng đồng.',
+        banned: true,
+        bannedAt: user.livestreamBannedAt,
+        reason: user.livestreamBannedReason || 'Vi phạm quy định cộng đồng'
+      });
+    }
+
     const streamKey = uuidv4();
 
     const newRoom = new LiveRoom({
@@ -37,10 +53,35 @@ export const createLiveStream = async (req, res) => {
   }
 };
 
+/**
+ * Check if current user is banned from livestreaming
+ * GET /api/livestreams/ban-status
+ */
+export const checkLivestreamBanStatus = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+    }
+
+    res.status(200).json({
+      banned: user.livestreamBanned || false,
+      bannedAt: user.livestreamBannedAt || null,
+      reason: user.livestreamBannedReason || null
+    });
+  } catch (err) {
+    console.error('Lỗi khi kiểm tra trạng thái ban:', err);
+    res.status(500).json({ message: 'Lỗi server.' });
+  }
+};
+
 export const getLiveStreamById = async (req, res) => {
   try {
     const { id } = req.params;
-    const currentUserId = req.query.userId;
+    // Use req.userId from optionalVerifyToken middleware (will be undefined if not logged in)
+    const currentUserId = req.userId;
     const stream = await LiveRoom.findById(id)
       .populate('hostId', 'displayName username avatarUrl')
       .populate('bannedUsers', 'displayName username avatarUrl');
@@ -51,22 +92,34 @@ export const getLiveStreamById = async (req, res) => {
     
     const hostId = stream.hostId._id.toString();
     const isHost = currentUserId && currentUserId === hostId;
+    let isFollowing = false;
+
     if (!isHost) {
       if (stream.privacyType === 'follow_only') {
         if (!currentUserId) {
           return res.status(401).json({ message: 'Vui lòng đăng nhập để xem stream này.' });
         }
 
-        const isFollowing = await UserFollow.findOne({ 
+        const followRelation = await UserFollow.findOne({ 
           followerId: currentUserId, 
           followingId: hostId 
         });
+        
+        isFollowing = !!followRelation;
         
         if (!isFollowing) {
           return res.status(403).json({ message: 'Stream này chỉ dành cho người theo dõi.' });
         }
 
+      } else if (currentUserId) {
+        // Check follow status for public streams too
+        const followRelation = await UserFollow.findOne({ 
+          followerId: currentUserId, 
+          followingId: hostId 
+        });
+        isFollowing = !!followRelation;
       }
+      
       if (!['live', 'ended'].includes(stream.status)) {
         return res.status(404).json({ message: 'Livestream không hoạt động hoặc đã kết thúc.' });
       }
@@ -74,13 +127,27 @@ export const getLiveStreamById = async (req, res) => {
 
     const playbackBaseUrl = process.env.MEDIA_SERVER_HTTP_URL || 'http://localhost:8000';
     const currentVmIp = process.env.CURRENT_VM_PUBLIC_IP || 'localhost';
+    
+    // Lấy số người xem từ socket room
+    let currentViewers = 0;
+    try {
+      const io = getSocketIo();
+      const roomSockets = await io.in(id).fetchSockets();
+      currentViewers = roomSockets.length;
+    } catch (e) {
+      // Nếu lỗi thì giữ nguyên 0
+    }
+    
     res.status(200).json({
       ...stream.toObject(),
       rtmpUrl: `rtmp://${currentVmIp}:1935/live`,
       playbackUrls: {
         hls: `${playbackBaseUrl}/live/${stream.streamKey}/index.m3u8`,
         flv: `${playbackBaseUrl}/live/${stream.streamKey}.flv`
-      }
+      },
+      isHost,
+      isFollowing,
+      currentViewers
     });
 
   } catch (err) {
@@ -237,14 +304,53 @@ export const updateLiveStreamDetails = async (req, res) => {
 };
 export const getActiveLiveStreams = async (req, res) => {
   try {
+    const currentUserId = req.userId; // Từ optionalVerifyToken (có thể undefined)
+    
     // 1. Tìm tất cả các phòng có status là 'live'
     const streams = await LiveRoom.find({ status: 'live' })
-      // 2. Lấy thông tin host (giống như hàm getLiveStreamById)
       .populate('hostId', 'displayName username avatarUrl') 
-      // 3. Sắp xếp stream mới nhất lên đầu
       .sort({ startedAt: -1 }); 
 
-    res.status(200).json(streams);
+    // 2. Lấy danh sách người mà currentUser đang follow
+    let followingIds = [];
+    if (currentUserId) {
+      const followings = await UserFollow.find({ followerId: currentUserId });
+      followingIds = followings.map(f => f.followingId.toString());
+    }
+
+    // 3. Lọc và thêm thông tin cho mỗi stream
+    const io = getSocketIo();
+    const result = [];
+    
+    for (const stream of streams) {
+      const hostId = stream.hostId?._id?.toString();
+      const isFollowing = followingIds.includes(hostId);
+      
+      // Nếu stream là follow_only và user không follow host -> ẩn
+      if (stream.privacyType === 'follow_only') {
+        // Nếu chưa đăng nhập hoặc không follow -> bỏ qua stream này
+        if (!currentUserId || !isFollowing) {
+          continue;
+        }
+      }
+      
+      // Lấy số người xem từ socket room
+      let currentViewers = 0;
+      try {
+        const roomSockets = await io.in(stream._id.toString()).fetchSockets();
+        currentViewers = roomSockets.length;
+      } catch (e) {
+        // Nếu lỗi thì giữ nguyên 0
+      }
+      
+      result.push({
+        ...stream.toObject(),
+        isFollowing,
+        currentViewers
+      });
+    }
+
+    res.status(200).json(result);
 
   } catch (err) {
     console.error('Lỗi khi lấy active streams:', err);
@@ -275,13 +381,37 @@ export const banUser = async (req, res) => {
     const room = await LiveRoom.findOne({ _id: roomId, hostId });
     if (!room) return res.status(404).json({ message: 'Không tìm thấy phòng hoặc bạn không phải host.' });
 
+    // Ban user khỏi room (giữ lại để backward compatibility - chỉ ban trong phòng này)
     if (!room.bannedUsers.includes(userId)) {
       room.bannedUsers.push(userId);
       await room.save();
     }
 
+    /**
+     * Ban user khỏi chat trong các phòng của host này
+     * User bị ban vẫn có thể xem stream nhưng không thể chat trong phòng của host này
+     * User vẫn có thể chat trong phòng của host khác
+     */
+    const bannedUser = await User.findById(userId);
+    if (bannedUser) {
+      // Thêm hostId vào danh sách chatBannedByHosts nếu chưa có
+      const hostIdObj = new mongoose.Types.ObjectId(hostId);
+      if (!bannedUser.chatBannedByHosts || !bannedUser.chatBannedByHosts.includes(hostIdObj)) {
+        if (!bannedUser.chatBannedByHosts) {
+          bannedUser.chatBannedByHosts = [];
+        }
+        bannedUser.chatBannedByHosts.push(hostIdObj);
+        await bannedUser.save();
+      }
+    }
+
     const io = getSocketIo();
     io.to(roomId).emit('user-banned', { userId });
+    // Emit to user để họ biết bị ban chat trong phòng của host này
+    io.to(userId).emit('chat-banned', { 
+      message: `Bạn đã bị cấm chat trong các phòng livestream của ${room.hostId?.displayName || 'host này'}`,
+      hostId: hostId.toString()
+    });
 
     if (messageId) {
       const chat = await RoomChat.findOne({ _id: messageId, roomId, userId });
@@ -292,7 +422,7 @@ export const banUser = async (req, res) => {
       }
     }
 
-    res.status(200).json({ message: 'Đã ban user.' });
+    res.status(200).json({ message: 'Đã ban user khỏi chat.' });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server.' });
   }
@@ -306,13 +436,32 @@ export const unbanUser = async (req, res) => {
     const room = await LiveRoom.findOne({ _id: roomId, hostId });
     if (!room) return res.status(404).json({ message: 'Không tìm thấy phòng hoặc bạn không phải host.' });
 
+    // Unban user khỏi room (backward compatibility - chỉ unban trong phòng này)
     room.bannedUsers = room.bannedUsers.filter(id => id.toString() !== userId);
     await room.save();
 
+    /**
+     * Unban user khỏi chat trong các phòng của host này
+     * User này có thể chat lại trong phòng của host này
+     */
+    const bannedUser = await User.findById(userId);
+    if (bannedUser && bannedUser.chatBannedByHosts) {
+      const hostIdObj = new mongoose.Types.ObjectId(hostId);
+      bannedUser.chatBannedByHosts = bannedUser.chatBannedByHosts.filter(
+        id => id.toString() !== hostId.toString()
+      );
+      await bannedUser.save();
+    }
+
     const io = getSocketIo();
     io.to(roomId).emit('user-unbanned', { userId });
+    // Emit to user để họ biết được unban chat trong phòng của host này
+    io.to(userId).emit('chat-unbanned', { 
+      message: `Bạn đã được gỡ cấm chat trong các phòng livestream của ${room.hostId?.displayName || 'host này'}`,
+      hostId: hostId.toString()
+    });
 
-    res.status(200).json({ message: 'Đã unban user.' });
+    res.status(200).json({ message: 'Đã unban user khỏi chat.' });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server.' });
   }
@@ -365,5 +514,111 @@ export const getRoomViewers = async (req, res) => {
   } catch (err) {
     console.error('Lỗi khi lấy viewers:', err);
     res.status(500).json({ message: 'Lỗi server.' });
+  }
+};
+
+// ============ USER REPORT FUNCTIONS ============
+
+/**
+ * Report a livestream room (User)
+ * POST /api/livestreams/:roomId/report
+ */
+export const reportLivestream = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { reason, description } = req.body;
+    const reporterId = req.userId;
+
+    // Validate roomId
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({ message: 'ID phòng không hợp lệ.' });
+    }
+
+    // Check if room exists
+    const room = await LiveRoom.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Không tìm thấy phòng livestream.' });
+    }
+
+    // Check if user is trying to report their own room
+    const hostId = room.hostId.toString();
+    if (hostId === reporterId.toString()) {
+      return res.status(400).json({ message: 'Bạn không thể báo cáo phòng livestream của chính mình.' });
+    }
+
+    // Validate reason
+    const validReasons = ['spam', 'inappropriate', 'copyright', 'harassment', 'other'];
+    if (!reason || !validReasons.includes(reason)) {
+      return res.status(400).json({ 
+        message: 'Lý do không hợp lệ. Phải là: spam, inappropriate, copyright, harassment, other' 
+      });
+    }
+
+    // Check if user has already reported this room
+    const existingReport = await ContentReport.findOne({
+      reporterId,
+      targetContentType: 'room',
+      targetContentId: roomId,
+      status: 'pending',
+    });
+
+    if (existingReport) {
+      return res.status(400).json({ message: 'Bạn đã báo cáo phòng livestream này rồi.' });
+    }
+
+    // Create report (không gửi notification)
+    const report = new ContentReport({
+      reporterId,
+      targetContentType: 'room',
+      targetContentId: roomId,
+      reason,
+      description: description || '',
+      status: 'pending',
+    });
+
+    await report.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Báo cáo đã được gửi thành công.',
+      data: report,
+    });
+  } catch (error) {
+    console.error('Lỗi khi báo cáo livestream:', error);
+    res.status(500).json({ message: error.message || 'Lỗi khi gửi báo cáo.' });
+  }
+};
+
+/**
+ * Check if current user has reported a livestream
+ * GET /api/livestreams/:roomId/report/check
+ */
+export const checkLivestreamReport = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const reporterId = req.userId;
+
+    // Validate roomId
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({ message: 'ID phòng không hợp lệ.' });
+    }
+
+    // Check if user has reported this room
+    const report = await ContentReport.findOne({
+      reporterId,
+      targetContentType: 'room',
+      targetContentId: roomId,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        hasReported: !!report,
+        report: report || null,
+      },
+    });
+  } catch (error) {
+    console.error('Lỗi khi kiểm tra báo cáo:', error);
+    res.status(500).json({ message: error.message || 'Lỗi khi kiểm tra báo cáo.' });
   }
 };

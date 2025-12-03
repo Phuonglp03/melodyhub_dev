@@ -992,3 +992,54 @@ export const getFollowingList = async (req, res) => {
     });
   }
 };
+
+// Search users by displayName or username
+export const searchUsers = async (req, res) => {
+  try {
+    const rawQuery = req.query.q || req.query.query || '';
+    const q = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+    const limitParam = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(limitParam) ? 10 : Math.min(Math.max(limitParam, 1), 50);
+
+    if (!q) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required',
+      });
+    }
+
+    const searchRegex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+    const users = await User.find({
+      isActive: true,
+      $or: [
+        { displayName: searchRegex },
+        { username: searchRegex },
+      ],
+    })
+      .select('username displayName avatarUrl followersCount')
+      .sort({ followersCount: -1, createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    const data = users.map((user) => ({
+      id: user._id,
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: normalizeAvatarUrl(user.avatarUrl),
+      followersCount: user.followersCount || 0,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Error searching users:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+};

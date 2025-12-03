@@ -2,11 +2,14 @@ import express from 'express';
 import { body, query } from 'express-validator';
 import { adminGetUsers, adminUpdateUser, adminToggleUserLock } from '../../controllers/admin/userManagement.js';
 import { verifyToken, isAdmin } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/permissions.js';
 
 const router = express.Router();
 
 // Apply admin middleware to all routes
 router.use(verifyToken, isAdmin);
+// Require manage_users permission (Super Admin và User Support)
+router.use(requirePermission('manage_users'));
 
 // GET /api/admin/users - Get all users with filtering and pagination
 router.get('/users',

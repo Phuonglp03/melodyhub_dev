@@ -145,9 +145,12 @@ export const getCommunityPlaylists = async (req, res) => {
 };
 
 // UC-15, Screen 29: Get user's playlists (My Playlists)
+// Note: If route has :userId param (e.g. /playlists/user/:userId) we should
+// prioritise that over the authenticated user so that we can view playlists
+// of other users (public only) on their profile page.
 export const getMyPlaylists = async (req, res) => {
   try {
-    const userId = req.userId || req.user?.id || req.params.userId;
+    const userId = req.params.userId || req.userId || req.user?.id;
     if (!userId) {
       return res.status(400).json({
         success: false,

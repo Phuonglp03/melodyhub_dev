@@ -129,6 +129,15 @@ export const getUnreadNotificationCount = async (req, res) => {
   try {
     const userId = req.userId;
 
+    // Nếu không có userId (chưa đăng nhập / token không hợp lệ trong optionalVerifyToken)
+    // thì coi như không có thông báo chưa đọc, tránh ném lỗi 401/403.
+    if (!userId) {
+      return res.status(200).json({
+        success: true,
+        data: { unreadCount: 0 }
+      });
+    }
+
     const count = await Notification.countDocuments({
       userId,
       isRead: false

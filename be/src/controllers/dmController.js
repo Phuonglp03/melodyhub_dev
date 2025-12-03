@@ -100,6 +100,9 @@ export const acceptRequest = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Requester cannot accept their own request' });
     }
 
+    // Lưu lại requester trước khi cập nhật để dùng cho socket emit
+    const requesterId = convo.requestedBy;
+
     convo.status = 'active';
     convo.acceptedBy = me;
     await convo.save();
@@ -125,6 +128,14 @@ export const acceptRequest = async (req, res) => {
         io.to(String(peer)).emit('dm:badge', { conversationId: String(id) });
       }
       io.to(String(me)).emit('dm:badge', { conversationId: String(id) });
+
+      // Thông báo realtime riêng cho người gửi yêu cầu rằng yêu cầu đã được chấp nhận
+      if (requesterId) {
+        io.to(String(requesterId)).emit('dm:request:accepted', {
+          conversationId: String(id),
+          acceptedBy: String(me),
+        });
+      }
       
       console.log(`[Socket.IO] Conversation ${id} accepted, notified participants ${me} and ${peer}`);
     } catch (socketErr) {
@@ -156,10 +167,63 @@ export const declineRequest = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Requester cannot decline their own request' });
     }
 
-    // Simple policy: delete pending conversation
-    await Conversation.deleteOne({ _id: id });
-    await DirectMessage.deleteMany({ conversationId: id });
-    return res.json({ success: true, message: 'Request declined' });
+    // Lưu lại thông tin trước khi cập nhật để emit socket
+    const peer = getPeerId(convo, me);
+    const requesterId = convo.requestedBy;
+
+    // Thay vì xóa hẳn, đánh dấu trạng thái là 'declined' để phía requester vẫn thấy lịch sử + trạng thái
+    convo.status = 'declined';
+    await convo.save();
+
+    // Populate lại để gửi cho FE (giống acceptRequest)
+    const populatedConvo = await Conversation.findById(id)
+      .populate('participants', 'displayName username avatarUrl')
+      .lean();
+
+    // Emit socket event để thông báo cho người gửi rằng yêu cầu đã bị từ chối
+    try {
+      const io = getSocketIo();
+
+      // Cập nhật badge cho cả hai phía để list hội thoại luôn đúng
+      if (peer) {
+        io.to(String(peer)).emit('dm:badge', { conversationId: String(id) });
+      }
+      io.to(String(me)).emit('dm:badge', { conversationId: String(id) });
+
+      // Thông báo cập nhật hội thoại cho cả hai phía
+      const conversationUpdatePayload = {
+        conversationId: String(id),
+        conversation: populatedConvo || convo,
+      };
+      
+      // Emit vào conversation room
+      io.to(String(id)).emit('dm:conversation:updated', conversationUpdatePayload);
+      
+      // Emit vào room của từng participant để đảm bảo nhận được
+      if (peer) {
+        io.to(String(peer)).emit('dm:conversation:updated', conversationUpdatePayload);
+        console.log(`[Socket.IO] Emitted dm:conversation:updated to peer ${peer} for conversation ${id}`);
+      }
+      if (requesterId) {
+        const requesterIdStr = String(requesterId);
+        io.to(requesterIdStr).emit('dm:conversation:updated', conversationUpdatePayload);
+        console.log(`[Socket.IO] Emitted dm:conversation:updated to requester ${requesterIdStr} for conversation ${id}`);
+        
+        console.log(`[Socket.IO] Emitting dm:request:declined to requester ${requesterIdStr} for conversation ${id}`);
+        io.to(requesterIdStr).emit('dm:request:declined', {
+          conversationId: String(id),
+          declinedBy: String(me),
+        });
+        console.log(`[Socket.IO] Emitted dm:request:declined event successfully`);
+      } else {
+        console.warn(`[Socket.IO] Cannot emit dm:request:declined: requesterId is missing for conversation ${id}`);
+      }
+    } catch (socketErr) {
+      console.error('[Socket.IO] Error emitting decline event:', socketErr);
+      // Không chặn response nếu socket lỗi
+    }
+
+    return res.json({ success: true, data: populatedConvo || convo, message: 'Request declined' });
   } catch (err) {
     console.error('declineRequest error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });

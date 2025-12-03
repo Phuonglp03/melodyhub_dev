@@ -45,6 +45,10 @@ const userSchema = new mongoose.Schema(
     privacyProfile: { type: String, enum: ['public', 'followers', 'private'], default: 'public', required: true },
     theme: { type: String, enum: ['light', 'dark', 'auto'], default: 'dark', required: true },
     language: { type: String, default: 'en', required: true },
+    livestreamBanned: { type: Boolean, default: false },
+    livestreamBannedAt: { type: Date },
+    livestreamBannedReason: { type: String },
+    chatBannedByHosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },
   {
     timestamps: true,

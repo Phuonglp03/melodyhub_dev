@@ -206,6 +206,8 @@ const projectSchema = new mongoose.Schema(
     audioUrl: { type: String },
     waveformData: [Number],
     audioDuration: Number,
+    // Timestamp of the last successful full-project audio export
+    exportedAt: { type: Date },
     collaborators: [CollaboratorSchema],
     isCollaborative: { type: Boolean, default: false },
     version: { type: Number, default: 2 },

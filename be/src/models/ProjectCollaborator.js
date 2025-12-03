@@ -5,6 +5,7 @@ const projectCollaboratorSchema = new mongoose.Schema(
     projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     role: { type: String, enum: ['viewer', 'contributor', 'admin'], default: 'viewer', required: true },
+    status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending', required: true },
   },
   { timestamps: { createdAt: 'joinedAt', updatedAt: false } }
 );

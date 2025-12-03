@@ -103,6 +103,17 @@ export const login = async (req, res) => {
         email: user.email
       });
     }
+
+    // Kiểm tra xem tài khoản có bị khóa không
+    console.log('[Login] Checking isActive for user:', user.email, 'isActive:', user.isActive);
+    if (!user.isActive) {
+      console.log('[Login] User account is locked:', user.email);
+      return res.status(403).json({
+        success: false,
+        message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.'
+      });
+    }
+
     console.log('User Permissions after Mongoose query:', user.permissions);
     const { accessToken, refreshToken } = await generateTokens(user);
 
@@ -127,6 +138,7 @@ export const login = async (req, res) => {
         displayName: user.displayName,
         roleId: user.roleId,
         verifiedEmail: user.verifiedEmail,
+        isActive: user.isActive, // ⭐ THÊM isActive
         permissions: user.permissions || [], // ⭐ THÊM permissions
         avatarUrl: normalizeAvatarUrl(user.avatarUrl)
       }
@@ -152,6 +164,13 @@ export const refreshToken = async (req, res) => {
     const user = await User.findOne({ refreshToken: refreshToken }).select('+refreshToken +permissions'); // ⭐ THÊM +permissions
     if (!user) {
       return res.status(403).json({ message: 'Refresh token không hợp lệ' });
+    }
+
+    // Kiểm tra xem tài khoản có bị khóa không
+    if (!user.isActive) {
+      return res.status(403).json({ 
+        message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.' 
+      });
     }
 
     // Xác thực refresh token
@@ -191,6 +210,7 @@ export const refreshToken = async (req, res) => {
           displayName: user.displayName,
           roleId: user.roleId,
           verifiedEmail: user.verifiedEmail,
+          isActive: user.isActive, // ⭐ THÊM isActive
           permissions: user.permissions || [], // ⭐ THÊM permissions
           avatarUrl: normalizeAvatarUrl(user.avatarUrl)
         }
@@ -320,6 +340,7 @@ export const verifyEmail = async (req, res) => {
         displayName: user.displayName,
         roleId: user.roleId,
         verifiedEmail: true,
+        isActive: user.isActive, // ⭐ THÊM isActive
         permissions: user.permissions || [], // ⭐ THÊM permissions
         avatarUrl: normalizeAvatarUrl(user.avatarUrl)
       }
@@ -426,8 +447,9 @@ export const register = async (req, res) => {
       });
     }
 
+    // Địa chỉ chi tiết (addressLine) chỉ là phần bổ sung (số nhà, tên đường),
+    // nên KHÔNG bắt buộc khi đăng ký. Người dùng chỉ cần chọn Tỉnh/Quận/Phường.
     const requiredAddressFields = [
-      { value: addressLine, message: 'Địa chỉ chi tiết không được để trống' },
       { value: provinceCode, message: 'Vui lòng chọn tỉnh/thành phố' },
       { value: provinceName, message: 'Vui lòng chọn tỉnh/thành phố' },
       { value: districtCode, message: 'Vui lòng chọn quận/huyện' },
@@ -442,7 +464,8 @@ export const register = async (req, res) => {
       }
     }
 
-    const normalizedAddressLine = addressLine.trim();
+    const normalizedAddressLine =
+      typeof addressLine === 'string' ? addressLine.trim() : '';
     const fullLocation = [
       normalizedAddressLine,
       wardName.trim(),

@@ -51,6 +51,9 @@ const postSchema = new mongoose.Schema(
     // Bài chia sẻ lại (nếu có)
     originalPostId: { type: mongoose.Schema.Types.ObjectId, ref: "Post" },
 
+    // Project đính kèm (nếu có)
+    projectId: { type: mongoose.Schema.Types.ObjectId, ref: "Project" },
+
     // Trạng thái kiểm duyệt
     moderationStatus: {
       type: String,

@@ -106,6 +106,14 @@ export const googleLogin = async (req, res) => {
     // Find or create user
     const user = await findOrCreateUser(profile);
 
+    // Kiểm tra xem tài khoản có bị khóa không
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.'
+      });
+    }
+
     // Generate JWT tokens
     const { accessToken, refreshToken } = await generateTokens(user);
 
@@ -126,13 +134,14 @@ export const googleLogin = async (req, res) => {
       avatarUrl: normalizeAvatarUrl(user.avatarUrl),
       roleId: user.roleId,
       verifiedEmail: user.verifiedEmail,
+      isActive: user.isActive, 
     };
 
     return res.status(200).json({
       success: true,
       message: 'Login successful',
       token: accessToken,
-      refreshToken: refreshToken, // Return refreshToken in response for frontend storage
+      refreshToken: refreshToken, 
       user: userData,
     });
   } catch (error) {

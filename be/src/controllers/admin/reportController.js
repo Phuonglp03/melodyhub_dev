@@ -2,8 +2,10 @@ import ContentReport from '../../models/ContentReport.js';
 import Post from '../../models/Post.js';
 import PostLike from '../../models/PostLike.js';
 import PostComment from '../../models/PostComment.js';
+import LiveRoom from '../../models/LiveRoom.js';
+import User from '../../models/User.js';
 import mongoose from 'mongoose';
-import { createNotification } from '../../utils/notificationHelper.js';
+import { createNotification, notifyAdminsPostReported } from '../../utils/notificationHelper.js';
 import { getSocketIo } from '../../config/socket.js';
 import { getReportLimit } from '../../services/reportSettingService.js';
 
@@ -78,6 +80,60 @@ export const reportPost = async (req, res) => {
     });
 
     await report.save();
+
+    // Gửi thông báo cho admin biết có report mới
+    try {
+      await notifyAdminsPostReported({
+        postId,
+        reporterId,
+        reason,
+      });
+    } catch (notifErr) {
+      console.warn('[ReportPost] Lỗi khi gửi thông báo report post cho admin:', notifErr?.message);
+    }
+
+    // Emit socket event để admin panel cập nhật real-time
+    try {
+      const io = getSocketIo();
+      
+      // Populate report với đầy đủ thông tin giống như getAllReports
+      const populatedReport = await ContentReport.findById(report._id)
+        .populate('reporterId', 'username displayName avatarUrl')
+        .populate('resolvedBy', 'username displayName')
+        .lean();
+      
+      // Nếu là post report, populate post info
+      if (populatedReport.targetContentType === 'post') {
+        const postData = await Post.findById(populatedReport.targetContentId)
+          .populate('userId', 'username displayName')
+          .populate('attachedLicks')
+          .lean();
+        
+        if (postData) {
+          populatedReport.post = {
+            _id: postData._id,
+            textContent: postData.textContent,
+            postType: postData.postType,
+            author: postData.userId,
+            createdAt: postData.createdAt,
+            attachedLicks: postData.attachedLicks || [],
+            media: postData.media || [],
+            linkPreview: postData.linkPreview || null,
+            archived: postData.archived,
+            archivedByReports: postData.archivedByReports || false,
+          };
+        }
+      }
+      
+      // Emit đến tất cả admin (có thể filter ở frontend hoặc tạo admin room)
+      console.log('[ReportPost] Emitting new:report event for reportId:', report._id);
+      io.emit('new:report', {
+        report: populatedReport,
+      });
+      console.log('[ReportPost] Socket event emitted successfully');
+    } catch (socketErr) {
+      console.error('[ReportPost] Không thể emit socket event:', socketErr?.message);
+    }
 
     // Check current pending reports count
     const pendingReportsCount = await ContentReport.countDocuments({
@@ -229,8 +285,8 @@ export const checkPostReport = async (req, res) => {
  */
 export const getAllReports = async (req, res) => {
   try {
-    // Get all reports, populate reporter and resolvedBy info
-    const reports = await ContentReport.find({})
+    // Get only post reports, populate reporter and resolvedBy info
+    const reports = await ContentReport.find({ targetContentType: 'post' })
       .populate('reporterId', 'username displayName avatarUrl')
       .populate('resolvedBy', 'username displayName')
       .sort({ createdAt: -1 });
@@ -458,6 +514,461 @@ export const adminDeletePost = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete post',
+    });
+  }
+};
+
+/**
+ * Get all active livestreams for admin (all rooms with status 'live')
+ * GET /api/reports/livestreams/active
+ */
+export const getActiveLivestreamsAdmin = async (req, res) => {
+  try {
+    const io = getSocketIo();
+    
+    // Get all rooms with status 'live'
+    const streams = await LiveRoom.find({ status: 'live' })
+      .populate('hostId', 'displayName username avatarUrl')
+      .sort({ startedAt: -1 });
+
+    // Get current viewers for each stream
+    const result = await Promise.all(streams.map(async (stream) => {
+      let currentViewers = 0;
+      try {
+        const roomSockets = await io.in(stream._id.toString()).fetchSockets();
+        currentViewers = roomSockets.length;
+      } catch (e) {
+        // Ignore
+      }
+      return {
+        ...stream.toObject(),
+        currentViewers
+      };
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error getting active livestreams:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get active livestreams'
+    });
+  }
+};
+
+/**
+ * Get all livestream reports (Admin only)
+ * GET /api/reports/livestreams/reports
+ */
+export const getLivestreamReports = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    
+    const query = { targetContentType: 'room' };
+    if (status && ['pending', 'resolved', 'dismissed'].includes(status)) {
+      query.status = status;
+    }
+
+    // Get reports with room and reporter info
+    const reports = await ContentReport.find(query)
+      .populate('reporterId', 'displayName username avatarUrl')
+      .populate('resolvedBy', 'displayName username')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    // Get room details for each report
+    const reportsWithRoomDetails = await Promise.all(
+      reports.map(async (report) => {
+        const room = await LiveRoom.findById(report.targetContentId)
+          .populate('hostId', 'displayName username avatarUrl');
+        
+        // Count total reports for this room
+        const reportCount = await ContentReport.countDocuments({
+          targetContentType: 'room',
+          targetContentId: report.targetContentId,
+          status: 'pending'
+        });
+
+        return {
+          ...report.toObject(),
+          room: room ? {
+            _id: room._id,
+            title: room.title,
+            description: room.description,
+            status: room.status,
+            privacyType: room.privacyType,
+            hostId: room.hostId,
+            startedAt: room.startedAt,
+            currentViewers: room.currentViewers || 0,
+            moderationStatus: room.moderationStatus || 'active'
+          } : null,
+          reportCount // Số lượng báo cáo cho room này
+        };
+      })
+    );
+
+    const total = await ContentReport.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        reports: reportsWithRoomDetails,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error getting livestream reports:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get livestream reports'
+    });
+  }
+};
+
+/**
+ * Resolve a report (Admin only)
+ * PATCH /api/reports/resolve/:reportId
+ */
+export const resolveReport = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const adminId = req.userId;
+
+    const report = await ContentReport.findById(reportId);
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    report.status = 'resolved';
+    report.resolvedBy = adminId;
+    report.resolvedAt = new Date();
+    await report.save();
+
+    // Optionally resolve all pending reports for the same content
+    await ContentReport.updateMany(
+      {
+        targetContentType: report.targetContentType,
+        targetContentId: report.targetContentId,
+        status: 'pending'
+      },
+      {
+        status: 'resolved',
+        resolvedBy: adminId,
+        resolvedAt: new Date()
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Report resolved successfully',
+      data: report
+    });
+  } catch (error) {
+    console.error('Error resolving report:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to resolve report'
+    });
+  }
+};
+
+/**
+ * Dismiss a report (Admin only)
+ * PATCH /api/reports/dismiss/:reportId
+ */
+export const dismissReport = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const adminId = req.userId;
+
+    const report = await ContentReport.findById(reportId);
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    report.status = 'dismissed';
+    report.resolvedBy = adminId;
+    report.resolvedAt = new Date();
+    await report.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Report dismissed successfully',
+      data: report
+    });
+  } catch (error) {
+    console.error('Error dismissing report:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to dismiss report'
+    });
+  }
+};
+
+/**
+ * Admin end a livestream
+ * POST /api/reports/livestreams/:roomId/end
+ */
+export const adminEndLivestream = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    
+    const room = await LiveRoom.findById(roomId);
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Livestream not found'
+      });
+    }
+
+    if (room.status === 'ended') {
+      return res.status(400).json({
+        success: false,
+        message: 'Livestream already ended'
+      });
+    }
+
+    room.status = 'ended';
+    room.endedAt = new Date();
+    await room.save();
+
+    // Notify via socket
+    const io = getSocketIo();
+    io.to(roomId).emit('stream-status-ended', { 
+      reason: 'admin',
+      message: 'Livestream đã bị admin dừng.'
+    });
+
+    // Notify host
+    try {
+      await createNotification({
+        userId: room.hostId,
+        actorId: null,
+        type: 'system',
+        linkUrl: `/livestream/history`,
+        message: 'Livestream của bạn đã bị admin dừng do vi phạm quy định.'
+      });
+    } catch (e) {
+      console.error('Error sending notification:', e);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Livestream ended by admin',
+      data: room
+    });
+  } catch (error) {
+    console.error('Error ending livestream:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to end livestream'
+    });
+  }
+};
+
+/**
+ * Admin ban a livestream (end + mark as banned + ban user from livestreaming)
+ * POST /api/reports/livestreams/:roomId/ban
+ */
+export const adminBanLivestream = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { resolveReports = true, banUser = true, reason = 'Vi phạm quy định cộng đồng' } = req.body;
+    const adminId = req.userId;
+    
+    const room = await LiveRoom.findById(roomId);
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy livestream'
+      });
+    }
+
+    // End stream if still live
+    if (room.status !== 'ended') {
+      room.status = 'ended';
+      room.endedAt = new Date();
+    }
+    
+    room.moderationStatus = 'banned';
+    await room.save();
+
+    // Ban user from livestreaming if banUser is true
+    let userBanned = false;
+    if (banUser) {
+      const user = await User.findById(room.hostId);
+      if (user) {
+        user.livestreamBanned = true;
+        user.livestreamBannedAt = new Date();
+        user.livestreamBannedReason = reason;
+        await user.save();
+        userBanned = true;
+      }
+    }
+
+    // Notify via socket
+    const io = getSocketIo();
+    io.to(roomId).emit('stream-status-ended', { 
+      reason: 'banned',
+      message: 'Livestream đã bị cấm do vi phạm quy định cộng đồng.'
+    });
+
+    // Resolve all pending reports for this room
+    if (resolveReports) {
+      await ContentReport.updateMany(
+        {
+          targetContentType: 'room',
+          targetContentId: roomId,
+          status: 'pending'
+        },
+        {
+          status: 'resolved',
+          resolvedBy: adminId,
+          resolvedAt: new Date()
+        }
+      );
+    }
+
+    // Notify host
+    try {
+      await createNotification({
+        userId: room.hostId,
+        actorId: null,
+        type: 'system',
+        linkUrl: `/support`,
+        message: userBanned 
+          ? `Bạn đã bị cấm phát livestream do: ${reason}. Liên hệ hỗ trợ nếu bạn cho rằng đây là nhầm lẫn.`
+          : 'Livestream của bạn đã bị cấm do vi phạm quy định cộng đồng.'
+      });
+    } catch (e) {
+      console.error('Error sending notification:', e);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: userBanned 
+        ? 'Đã cấm livestream và cấm người dùng phát livestream'
+        : 'Đã cấm livestream',
+      data: {
+        room,
+        userBanned
+      }
+    });
+  } catch (error) {
+    console.error('Error banning livestream:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Lỗi khi cấm livestream'
+    });
+  }
+};
+
+/**
+ * Admin unban user from livestreaming
+ * POST /api/reports/users/:userId/unban-livestream
+ */
+export const adminUnbanUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng'
+      });
+    }
+
+    if (!user.livestreamBanned) {
+      return res.status(400).json({
+        success: false,
+        message: 'Người dùng này không bị cấm livestream'
+      });
+    }
+
+    user.livestreamBanned = false;
+    user.livestreamBannedAt = null;
+    user.livestreamBannedReason = null;
+    await user.save();
+
+    // Notify user
+    try {
+      await createNotification({
+        userId: userId,
+        actorId: null,
+        type: 'system',
+        linkUrl: `/livestream/create`,
+        message: 'Bạn đã được gỡ cấm phát livestream. Bạn có thể tạo phòng livestream mới.'
+      });
+    } catch (e) {
+      console.error('Error sending notification:', e);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Đã gỡ cấm phát livestream cho người dùng',
+      data: {
+        userId,
+        displayName: user.displayName
+      }
+    });
+  } catch (error) {
+    console.error('Error unbanning user from livestream:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Lỗi khi gỡ cấm'
+    });
+  }
+};
+
+/**
+ * Get all users banned from livestreaming (Admin only)
+ * GET /api/reports/users/banned-livestream
+ */
+export const getBannedLivestreamUsers = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+
+    const users = await User.find({ livestreamBanned: true })
+      .select('displayName username avatarUrl livestreamBanned livestreamBannedAt livestreamBannedReason')
+      .sort({ livestreamBannedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    const total = await User.countDocuments({ livestreamBanned: true });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        users,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error getting banned users:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Lỗi khi lấy danh sách người dùng bị cấm'
     });
   }
 };

@@ -6,6 +6,7 @@ import LickComment from "../models/LickComment.js";
 import ContentTag from "../models/ContentTag.js";
 import Tag from "../models/Tag.js";
 import { uploadFromBuffer } from "../utils/cloudinaryUploader.js";
+import { notifyAdminLickPending } from "../utils/notificationHelper.js";
 import {
   extractWaveformFromUrl,
   extractWaveformFromBuffer,
@@ -978,6 +979,21 @@ export const createLick = async (req, res) => {
     await newLick.save();
 
     console.log("[CREATE LICK] Lick saved successfully:", newLick._id);
+
+    // Gửi thông báo cho admin: có lick mới cần duyệt
+    try {
+      if (userId && newLick._id) {
+        await notifyAdminLickPending({
+          lickId: String(newLick._id),
+          uploaderId: String(userId),
+        });
+      }
+    } catch (notifErr) {
+      console.warn(
+        "[CREATE LICK] Lỗi khi gửi thông báo lick pending cho admin:",
+        notifErr?.message
+      );
+    }
 
     res.status(201).json({
       success: true,

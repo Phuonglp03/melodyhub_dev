@@ -132,9 +132,21 @@ export const adminToggleUserLock = async (req, res) => {
     }
 
     // Toggle isLocked status
+    const wasActive = user.isActive;
     user.isActive = !user.isActive;
+    console.log('[adminToggleUserLock] Locking user:', user.email, 'New isActive:', user.isActive);
+
+    // Nếu đang lock user (chuyển từ active sang locked), xóa refreshToken để vô hiệu hóa token hiện tại
+    if (wasActive && !user.isActive) {
+      user.refreshToken = undefined;
+      console.log('[adminToggleUserLock] Cleared refreshToken for locked user:', user.email);
+    }
 
     await user.save();
+    
+    // Verify the save
+    const verifyUser = await User.findById(userId).select('isActive email');
+    console.log('[adminToggleUserLock] Verified after save:', verifyUser?.email, 'isActive:', verifyUser?.isActive);
 
     // Remove sensitive data before sending response
     const userResponse = user.toObject();

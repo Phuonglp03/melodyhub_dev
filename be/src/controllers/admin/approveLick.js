@@ -1,4 +1,5 @@
 import Lick from "../../models/Lick.js";
+import { notifyUserLickApproved, notifyUserLickRejected } from "../../utils/notificationHelper.js";
 
 // Get pending licks for admin
 export const getPendingLicks = async (req, res) => {
@@ -35,6 +36,23 @@ export const approveLick = async (req, res) => {
       return res.status(404).json({ success: false, message: "Lick not found" });
     }
 
+    // Gửi thông báo cho chủ sở hữu lick: lick đã được duyệt
+    try {
+      const adminId = req.userId || req.user?.id;
+      if (adminId && lick.userId) {
+        await notifyUserLickApproved({
+          lickId: String(lick._id),
+          lickOwnerId: String(lick.userId),
+          adminId: String(adminId),
+        });
+      }
+    } catch (notifErr) {
+      console.warn(
+        "[APPROVE LICK] Lỗi khi gửi thông báo lick approved cho user:",
+        notifErr?.message
+      );
+    }
+
     res.status(200).json({
       success: true,
       message: "Lick approved successfully",
@@ -62,6 +80,23 @@ export const rejectLick = async (req, res) => {
 
     if (!lick) {
       return res.status(404).json({ success: false, message: "Lick not found" });
+    }
+
+    // Gửi thông báo cho chủ sở hữu lick: lick đã bị từ chối
+    try {
+      const adminId = req.userId || req.user?.id;
+      if (adminId && lick.userId) {
+        await notifyUserLickRejected({
+          lickId: String(lick._id),
+          lickOwnerId: String(lick.userId),
+          adminId: String(adminId),
+        });
+      }
+    } catch (notifErr) {
+      console.warn(
+        "[REJECT LICK] Lỗi khi gửi thông báo lick rejected cho user:",
+        notifErr?.message
+      );
     }
 
     res.status(200).json({

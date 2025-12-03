@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
  * @param {Number} octave - Starting octave (default: 4)
  * @returns {Array<Number>} - Array of MIDI note numbers
  */
-function chordNameToMidiNotes(chordName, octave = 4) {
+export function chordNameToMidiNotes(chordName, octave = 4) {
   if (!chordName || typeof chordName !== "string") {
     return [];
   }
@@ -171,6 +171,73 @@ function generateWaveform(frequency, t, instrumentProgram = 0) {
  * @param {Object} options - Generation options
  * @returns {Promise<Object>} - {filepath, filename, url, success, cloudinaryUrl}
  */
+// Helper: Convert bandSettings.style to rhythm pattern noteEvents
+// Maps style names to the hardcoded patterns from frontend ProjectBandEngine.js
+const styleToRhythmPattern = (style) => {
+  const stylePatterns = {
+    Swing: {
+      piano: [0, 2],
+      bass: [0, 2],
+      drums: { kick: [0], snare: [1, 3], hihat: [0, 1, 2, 3] },
+    },
+    Bossa: {
+      piano: [0, 1.5, 3],
+      bass: [0, 1.5, 2, 3.5],
+      drums: {
+        kick: [0, 2],
+        snare: [],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+    Latin: {
+      piano: [0, 0.5, 1.5, 2, 3],
+      bass: [0, 1, 2, 3],
+      drums: {
+        kick: [0, 2.5],
+        snare: [1, 3],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+    Ballad: {
+      piano: [0],
+      bass: [0, 2],
+      drums: { kick: [0], snare: [2], hihat: [0, 1, 2, 3] },
+    },
+    Funk: {
+      piano: [0, 0.5, 1.5, 2.5, 3],
+      bass: [0, 0.75, 1.5, 2, 2.75, 3.5],
+      drums: {
+        kick: [0, 1.5, 2.5],
+        snare: [1, 3],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+    Rock: {
+      piano: [0, 2],
+      bass: [0, 1, 2, 3],
+      drums: {
+        kick: [0, 2],
+        snare: [1, 3],
+        hihat: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+      },
+    },
+  };
+
+  const pattern = stylePatterns[style] || stylePatterns.Swing;
+
+  // Convert pattern to noteEvents format for comping/rhythm instruments
+  // Use piano pattern as default rhythm pattern
+  const noteEvents = pattern.piano.map((beat) => ({
+    beat: Math.floor(beat),
+    subdivision: beat % 1,
+    velocity: 0.8,
+    duration: 0.5,
+    noteOffset: 0,
+  }));
+
+  return { noteEvents, beatsPerPattern: 4, patternType: "style" };
+};
+
 export const generateAudioFromChords = async (chords, options = {}) => {
   try {
     const {
@@ -183,6 +250,8 @@ export const generateAudioFromChords = async (chords, options = {}) => {
       rhythmPatternId = null, // Rhythm pattern ID to apply
       instrumentId = null, // Instrument ID for different sounds
       instrumentProgram = 0, // MIDI program number (0-127)
+      volume = 1.0, // Volume multiplier (0-1)
+      bandSettings = null, // Band settings for style-based patterns
     } = options;
 
     console.log(
@@ -191,7 +260,21 @@ export const generateAudioFromChords = async (chords, options = {}) => {
 
     // Fetch rhythm pattern if provided
     let rhythmPattern = null;
-    if (rhythmPatternId) {
+
+    // Check bandSettings.style first (before rhythmPatternId)
+    if (bandSettings?.style && !rhythmPatternId) {
+      const styleEvents = styleToRhythmPattern(bandSettings.style);
+      rhythmPattern = {
+        name: `${bandSettings.style} Style`,
+        patternType: "style",
+        beatsPerPattern: 4,
+        noteEvents: styleEvents.noteEvents,
+      };
+      console.log(
+        `[Audio Generator] Using style-based rhythm pattern: ${bandSettings.style} (${styleEvents.noteEvents.length} events)`
+      );
+    } else if (rhythmPatternId) {
+      // Existing database lookup
       try {
         const PlayingPattern = (await import("../models/PlayingPattern.js"))
           .default;
@@ -436,7 +519,10 @@ export const generateAudioFromChords = async (chords, options = {}) => {
                 instrumentProgram
               );
               const amplitude =
-                waveform * (instrumentProgram === -1 ? 0.6 : 0.3) * velocity; // Percussion louder
+                waveform *
+                (instrumentProgram === -1 ? 0.6 : 0.3) *
+                velocity *
+                volume; // Apply volume multiplier
 
               // Apply ADSR envelope with sharper attack/release for rhythm patterns
               const noteProgress = (i - eventStartSample) / actualEventDuration;
@@ -491,7 +577,8 @@ export const generateAudioFromChords = async (chords, options = {}) => {
           ) {
             const t = (i - chordStartSample) / sampleRate;
             const waveform = generateWaveform(frequency, t, instrumentProgram);
-            const amplitude = waveform * (instrumentProgram === -1 ? 0.5 : 0.2); // louder for percussion
+            const amplitude =
+              waveform * (instrumentProgram === -1 ? 0.5 : 0.2) * volume; // Apply volume multiplier
 
             // Apply ADSR envelope (Attack, Decay, Sustain, Release)
             const noteProgress =

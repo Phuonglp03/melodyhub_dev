@@ -3,7 +3,23 @@ import mongoose from 'mongoose';
 const notificationSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['like_lick', 'comment_lick', 'follow', 'project_invite', 'system', 'like_post', 'comment_post'], required: true },
+    type: {
+      type: String,
+      enum: [
+        'like_lick',
+        'comment_lick',
+        'follow',
+        'project_invite',
+        'system',
+        'like_post',
+        'comment_post',
+        'lick_pending_review',
+        'lick_approved',
+        'lick_rejected',
+        'post_reported',
+      ],
+      required: true,
+    },
     actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Người thực hiện hành động (người like, comment, follow)
     message: { type: String }, // Nội dung thông báo bằng tiếng Việt
     linkUrl: { type: String },

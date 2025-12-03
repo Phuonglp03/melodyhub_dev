@@ -3,12 +3,15 @@
 import express from 'express';
 import { body } from 'express-validator';
 import { verifyToken, isAdmin } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/permissions.js';
 import { createAdminAccount } from '../../controllers/admin/createAdminAccount.js'; 
 
 const router = express.Router();
 
 // Áp dụng middleware admin cho tất cả các route trong file này
-router.use(verifyToken, isAdmin); 
+router.use(verifyToken, isAdmin);
+// Chỉ Super Admin mới có thể tạo admin khác
+router.use(requirePermission('create_admin')); 
 
 // POST /api/admin/create-admin - Tạo tài khoản Admin mới
 router.post(
