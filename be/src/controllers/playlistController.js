@@ -5,7 +5,6 @@ import Lick from "../models/Lick.js";
 import User from "../models/User.js";
 import LickLike from "../models/LickLike.js";
 import LickComment from "../models/LickComment.js";
-import LickTag from "../models/LickTag.js";
 import Tag from "../models/Tag.js";
 
 // Get community playlists (public playlists)

@@ -1,4 +1,3 @@
-import CollabSnapshot from "../models/CollabSnapshot.js";
 import { getRedisClient } from "../config/redisClient.js";
 import { recordCollabMetric } from "../utils/collabMetrics.js";
 
