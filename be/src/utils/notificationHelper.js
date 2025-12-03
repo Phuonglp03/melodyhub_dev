@@ -292,5 +292,39 @@ export const notifyAdminsPostReported = async ({
   }
 };
 
+/**
+ * Thông báo khi có lời mời cộng tác dự án
+ */
+export const notifyProjectCollaboratorInvited = async ({
+  projectId,
+  projectTitle,
+  inviterId,
+  invitedUserId,
+}) => {
+  try {
+    const inviter = await User.findById(inviterId)
+      .select('displayName username')
+      .lean();
+
+    const inviterName =
+      inviter?.displayName || inviter?.username || 'Một nhạc sĩ';
+
+    const safeProjectTitle = projectTitle || 'Dự án MelodyHub';
+    const message = `${inviterName} đã mời bạn cộng tác vào dự án ${safeProjectTitle}`;
+    const linkUrl = `/projects/${projectId}`;
+
+    return await createNotification({
+      userId: invitedUserId,
+      actorId: inviterId,
+      type: 'project_invite',
+      linkUrl,
+      message,
+    });
+  } catch (error) {
+    console.error('[Notification] Lỗi khi tạo thông báo mời cộng tác dự án:', error);
+    return null;
+  }
+};
+
 
 

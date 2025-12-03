@@ -8,6 +8,7 @@ import Lick from "../models/Lick.js";
 import Instrument from "../models/Instrument.js";
 import PlayingPattern from "../models/PlayingPattern.js";
 import { uploadToCloudinary } from "../middleware/file.js";
+import { notifyProjectCollaboratorInvited } from "../utils/notificationHelper.js";
 import {
   getAllInstruments,
   getInstrumentById,
@@ -254,6 +255,7 @@ export const createProject = async (req, res) => {
       projectId: project._id,
       userId: creatorId,
       role: "admin",
+      status: "accepted",
     });
     await collaborator.save();
 
@@ -276,41 +278,55 @@ export const createProject = async (req, res) => {
 };
 
 // Get all projects for a user (owner or collaborator)
+// Also returns pending invitations separately for the "Collaborations" tab
 export const getUserProjects = async (req, res) => {
   try {
     const userId = req.userId;
     const { filter = "all" } = req.query; // "all", "my-projects", "collaborations"
     const { status } = req.query; // Optional status filter: "draft", "active", "completed", "inactive"
 
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Load all collaboration links for this user once so we can:
+    // - Treat accepted collabs as real projects
+    // - Surface pending invitations separately
+    const collaborations = await ProjectCollaborator.find({
+      userId: userObjectId,
+    }).select("projectId role status");
+
+    const acceptedProjectIds = collaborations
+      .filter((c) => c.status === "accepted")
+      .map((c) => c.projectId);
+
+    const pendingProjectIds = collaborations
+      .filter((c) => c.status === "pending")
+      .map((c) => c.projectId);
+
+    console.log("(IS $) [Projects:getUserProjects] Collaborations snapshot:", {
+      userId,
+      filter,
+      totalLinks: collaborations.length,
+      acceptedCount: acceptedProjectIds.length,
+      pendingCount: pendingProjectIds.length,
+    });
+
     let matchQuery = {};
 
     if (filter === "my-projects") {
       // Only projects where user is the owner
-      matchQuery = { creatorId: new mongoose.Types.ObjectId(userId) };
+      matchQuery = { creatorId: userObjectId };
     } else if (filter === "collaborations") {
-      // Only projects where user is a collaborator but not owner
-      const collaborations = await ProjectCollaborator.find({
-        userId: new mongoose.Types.ObjectId(userId),
-      }).select("projectId");
-
-      const projectIds = collaborations.map((c) => c.projectId);
-
+      // Only projects where user is an accepted collaborator but not owner
       matchQuery = {
-        _id: { $in: projectIds },
-        creatorId: { $ne: new mongoose.Types.ObjectId(userId) },
+        _id: { $in: acceptedProjectIds },
+        creatorId: { $ne: userObjectId },
       };
     } else {
-      // All projects (owner or collaborator)
-      const collaborations = await ProjectCollaborator.find({
-        userId: new mongoose.Types.ObjectId(userId),
-      }).select("projectId");
-
-      const projectIds = collaborations.map((c) => c.projectId);
-
+      // All projects (owner or accepted collaborator)
       matchQuery = {
         $or: [
-          { creatorId: new mongoose.Types.ObjectId(userId) },
-          { _id: { $in: projectIds } },
+          { creatorId: userObjectId },
+          { _id: { $in: acceptedProjectIds } },
         ],
       };
     }
@@ -321,7 +337,7 @@ export const getUserProjects = async (req, res) => {
       if (matchQuery.$or) {
         // If we have $or, wrap it with $and to combine with status
         matchQuery = {
-          $and: [matchQuery, { status: status }],
+          $and: [matchQuery, { status }],
         };
       } else {
         // Otherwise, just add status directly
@@ -333,9 +349,40 @@ export const getUserProjects = async (req, res) => {
       .populate("creatorId", "username displayName avatarUrl")
       .sort({ updatedAt: -1 });
 
+    // Fetch project details for pending invitations so the UI can render cards
+    let pendingInvitations = [];
+    if (pendingProjectIds.length > 0) {
+      const pendingProjects = await Project.find({
+        _id: { $in: pendingProjectIds },
+      })
+        .populate("creatorId", "username displayName avatarUrl")
+        .sort({ updatedAt: -1 });
+
+      const pendingById = new Map(
+        collaborations
+          .filter((c) => c.status === "pending")
+          .map((c) => [String(c.projectId), c])
+      );
+
+      pendingInvitations = pendingProjects.map((project) => {
+        const collab = pendingById.get(String(project._id));
+        return {
+          _id: project._id,
+          title: project.title || project.name || "Untitled Project",
+          description: project.description || "",
+          status: project.status,
+          creatorId: project.creatorId,
+          invitationRole: collab?.role || "contributor",
+          updatedAt: project.updatedAt,
+          createdAt: project.createdAt,
+        };
+      });
+    }
+
     res.json({
       success: true,
       data: projects.map((project) => normalizeProjectResponse(project)),
+      pendingInvitations,
     });
   } catch (error) {
     console.error("Error fetching user projects:", error);
@@ -3275,17 +3322,19 @@ export const inviteCollaborator = async (req, res) => {
       userId: targetUser._id,
     });
 
+    const previousStatus = collaborator ? collaborator.status : null;
+
     if (!collaborator) {
       collaborator = new ProjectCollaborator({
         projectId: project._id,
         userId: targetUser._id,
         role,
-        status: "accepted",
+        status: "pending",
       });
     } else {
       collaborator.role = role;
       if (collaborator.status !== "accepted") {
-        collaborator.status = "accepted";
+        collaborator.status = "pending";
       }
     }
 
@@ -3294,6 +3343,20 @@ export const inviteCollaborator = async (req, res) => {
       "userId",
       "username displayName avatarUrl email"
     );
+
+    if (previousStatus !== "accepted") {
+      const projectTitle =
+        project.title ||
+        project.name ||
+        project.projectName ||
+        "Dự án chưa đặt tên";
+      await notifyProjectCollaboratorInvited({
+        projectId: project._id,
+        projectTitle,
+        inviterId,
+        invitedUserId: targetUser._id,
+      });
+    }
 
     console.log("(IS $) [CollabInvite] Collaborator invited/updated:", {
       projectId: project._id.toString(),
@@ -3305,9 +3368,9 @@ export const inviteCollaborator = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Collaborator ${
+      message: `Đã gửi lời mời cộng tác đến ${
         targetUser.displayName || targetUser.username || normalizedEmail
-      } added as ${role}`,
+      }`,
       data: collaborator,
     });
   } catch (error) {
