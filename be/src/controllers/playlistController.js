@@ -5,7 +5,7 @@ import Lick from "../models/Lick.js";
 import User from "../models/User.js";
 import LickLike from "../models/LickLike.js";
 import LickComment from "../models/LickComment.js";
-import Tag from "../models/Tag.js";
+import ContentTag from "../models/ContentTag.js";
 
 // Get community playlists (public playlists)
 export const getCommunityPlaylists = async (req, res) => {
@@ -88,10 +88,7 @@ export const getCommunityPlaylists = async (req, res) => {
     ];
 
     // Get total count
-    const totalCountPipeline = [
-      { $match: matchStage },
-      { $count: "count" },
-    ];
+    const totalCountPipeline = [{ $match: matchStage }, { $count: "count" }];
 
     const [playlists, totalResult] = await Promise.all([
       Playlist.aggregate(pipeline),
@@ -115,7 +112,9 @@ export const getCommunityPlaylists = async (req, res) => {
         ? {
             user_id: playlist.owner._id,
             display_name:
-              playlist.owner.displayName || playlist.owner.username || "Unknown",
+              playlist.owner.displayName ||
+              playlist.owner.username ||
+              "Unknown",
             username: playlist.owner.username || "",
             avatar_url: playlist.owner.avatarUrl || null,
           }
@@ -312,15 +311,20 @@ export const getPlaylistById = async (req, res) => {
         // Get comments count
         const commentsCount = await LickComment.countDocuments({ lickId });
 
-        // Get tags
-        const lickTags = await LickTag.find({ lickId })
+        // Get tags using unified content tagging model
+        const lickTags = await ContentTag.find({
+          contentId: lickId,
+          contentType: "lick",
+        })
           .populate("tagId")
           .lean();
-        const tags = lickTags.map((lt) => ({
-          tag_id: lt.tagId._id,
-          tag_name: lt.tagId.tagName,
-          tag_type: lt.tagId.tagType,
-        }));
+        const tags = lickTags
+          .filter((lt) => !!lt.tagId)
+          .map((lt) => ({
+            tag_id: lt.tagId._id,
+            tag_name: lt.tagId.name,
+            tag_type: lt.tagId.type,
+          }));
 
         return {
           lick_id: lick._id,

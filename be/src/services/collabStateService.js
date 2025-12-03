@@ -190,4 +190,3 @@ export const clearCollabState = async (projectId) => {
   await client.del(OPS_KEY(projectId));
   pendingSnapshotTimers.delete(projectId);
 };
-
