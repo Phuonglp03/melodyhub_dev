@@ -766,28 +766,77 @@ export const getFollowSuggestions = async (req, res) => {
     };
 
     // Heuristic 1: friends of friends (who people I follow are following)
+    // Đếm số người bạn riêng biệt đang follow candidate
     if (followingIds.length) {
       const secondDegreeFollows = await UserFollow.find({
         followerId: { $in: followingIds },
       })
-        .select('followingId')
+        .select('followerId followingId')
         .lean();
 
-      secondDegreeFollows.forEach(({ followingId }) => {
-        bumpCandidate(followingId, MUTUAL_WEIGHT, 'mutualFollowing');
+      // Group by followingId để đếm số người bạn riêng biệt
+      const mutualFollowingMap = new Map();
+      secondDegreeFollows.forEach(({ followerId, followingId }) => {
+        const candidateIdStr = followingId?.toString();
+        if (!candidateIdStr) return;
+        if (followedIdSet.has(candidateIdStr) || candidateIdStr === userIdStr) return;
+        
+        if (!mutualFollowingMap.has(candidateIdStr)) {
+          mutualFollowingMap.set(candidateIdStr, new Set());
+        }
+        mutualFollowingMap.get(candidateIdStr).add(followerId?.toString());
+      });
+
+      // Bump score với số người bạn riêng biệt
+      mutualFollowingMap.forEach((friendSet, candidateIdStr) => {
+        const count = friendSet.size;
+        if (count > 0) {
+          const candidateId = candidateIdStr;
+          const existing = candidateScores.get(candidateIdStr) || {
+            score: 0,
+            meta: defaultMeta(),
+          };
+          existing.score += MUTUAL_WEIGHT * count;
+          existing.meta.mutualFollowing = count;
+          candidateScores.set(candidateIdStr, existing);
+        }
       });
     }
 
     // Heuristic 2: shared followers (who people that follow me are also following)
+    // Đếm số người theo dõi bạn riêng biệt cũng follow candidate
     if (followerIds.length) {
       const sharedFollowerEdges = await UserFollow.find({
         followerId: { $in: followerIds },
       })
-        .select('followingId')
+        .select('followerId followingId')
         .lean();
 
-      sharedFollowerEdges.forEach(({ followingId }) => {
-        bumpCandidate(followingId, SHARED_FOLLOWER_WEIGHT, 'sharedFollowers');
+      // Group by followingId để đếm số người theo dõi bạn riêng biệt
+      const sharedFollowersMap = new Map();
+      sharedFollowerEdges.forEach(({ followerId, followingId }) => {
+        const candidateIdStr = followingId?.toString();
+        if (!candidateIdStr) return;
+        if (followedIdSet.has(candidateIdStr) || candidateIdStr === userIdStr) return;
+        
+        if (!sharedFollowersMap.has(candidateIdStr)) {
+          sharedFollowersMap.set(candidateIdStr, new Set());
+        }
+        sharedFollowersMap.get(candidateIdStr).add(followerId?.toString());
+      });
+
+      // Bump score với số người theo dõi bạn riêng biệt
+      sharedFollowersMap.forEach((followerSet, candidateIdStr) => {
+        const count = followerSet.size;
+        if (count > 0) {
+          const existing = candidateScores.get(candidateIdStr) || {
+            score: 0,
+            meta: defaultMeta(),
+          };
+          existing.score += SHARED_FOLLOWER_WEIGHT * count;
+          existing.meta.sharedFollowers = count;
+          candidateScores.set(candidateIdStr, existing);
+        }
       });
     }
 
@@ -821,7 +870,7 @@ export const getFollowSuggestions = async (req, res) => {
 
     // Fallback: add popular active users if pool is too small
     if (candidateScores.size < limit * POOL_MULTIPLIER) {
-      const fallbackUsers = await User.find({ isActive: true })
+      const fallbackUsers = await User.find({ isActive: true, roleId: 'user' })
         .sort({ followersCount: -1, createdAt: -1 })
         .limit(limit * 5)
         .select('_id');
@@ -834,34 +883,43 @@ export const getFollowSuggestions = async (req, res) => {
 
     const buildReasons = (meta = {}) => {
       const reasons = [];
-      // Thứ tự 1: Follow chung (mutualFollowing và sharedFollowers)
-      if (meta.mutualFollowing) {
+      
+      // Thứ tự 1: mutualFollowing - "Được X người bạn của bạn theo dõi"
+      if (meta.mutualFollowing && meta.mutualFollowing > 0) {
         reasons.push(`Được ${meta.mutualFollowing} người bạn của bạn theo dõi`);
       }
-      if (meta.sharedFollowers) {
+      
+      // Thứ tự 2: sharedFollowers - "X người theo dõi bạn cũng theo dõi họ"
+      if (meta.sharedFollowers && meta.sharedFollowers > 0) {
         reasons.push(`${meta.sharedFollowers} người theo dõi bạn cũng theo dõi họ`);
       }
-      // Thứ tự 2: Tương tác nội dung (interactions)
+      
+      // Thứ tự 3: interactions - "Bạn đã thích/bình luận X bài viết của họ"
       const totalInteractions =
         (meta.interactions?.likes || 0) + (meta.interactions?.comments || 0);
-      if (totalInteractions) {
+      if (totalInteractions > 0) {
         const likePart = meta.interactions?.likes || 0;
         const commentPart = meta.interactions?.comments || 0;
-        if (commentPart && likePart) {
+        if (commentPart > 0 && likePart > 0) {
           reasons.push(`Bạn đã thích/bình luận ${totalInteractions} bài viết của họ`);
-        } else if (commentPart) {
+        } else if (commentPart > 0) {
           reasons.push(`Bạn đã bình luận ${commentPart} bài viết của họ`);
-        } else if (likePart) {
+        } else if (likePart > 0) {
           reasons.push(`Bạn đã thích ${likePart} bài viết của họ`);
         }
       }
-      // Thứ tự 3: Tài khoản nổi bật (chỉ hiển thị nếu không có tương tác)
-      if (meta.popularity && !totalInteractions) {
+      
+      // Thứ tự 4: popularity - "Tài khoản nổi bật trong cộng đồng" (chỉ hiển thị nếu không có tương tác)
+      if (meta.popularity && totalInteractions === 0) {
         reasons.push('Tài khoản nổi bật trong cộng đồng');
       }
+      
+      // Fallback nếu không có lý do nào
       if (!reasons.length) {
         reasons.push('Gợi ý phù hợp với bạn');
       }
+      
+      // Trả về tối đa 2 lý do đầu tiên theo thứ tự ưu tiên
       return reasons.slice(0, 2);
     };
 
@@ -878,6 +936,7 @@ export const getFollowSuggestions = async (req, res) => {
     const users = await User.find({
       _id: { $in: candidateIds },
       isActive: true,
+      roleId: 'user',
     })
       .select('username displayName avatarUrl followersCount')
       .lean();
@@ -1012,6 +1071,7 @@ export const searchUsers = async (req, res) => {
 
     const users = await User.find({
       isActive: true,
+      roleId: { $ne: 'admin' },
       $or: [
         { displayName: searchRegex },
         { username: searchRegex },

@@ -294,7 +294,7 @@ export const createPost = async (req, res) => {
     const populatedPost = await Post.findById(savedPost._id)
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
-      .populate('projectId', 'title description coverImageUrl status')
+      .populate('projectId', 'title description coverImageUrl status audioUrl waveformData audioDuration')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .lean();
 
@@ -690,7 +690,7 @@ export const getPostsByUser = async (req, res) => {
     })
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
-      .populate('projectId', 'title description coverImageUrl status')
+      .populate('projectId', 'title description coverImageUrl status audioUrl waveformData audioDuration')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -735,7 +735,7 @@ export const getPostById = async (req, res) => {
     const post = await Post.findById(postId)
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
-      .populate('projectId', 'title description coverImageUrl status')
+      .populate('projectId', 'title description coverImageUrl status audioUrl waveformData audioDuration')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .lean();
 
@@ -765,7 +765,7 @@ export const getPostById = async (req, res) => {
 export const updatePost = async (req, res) => {
   try {
     const { postId } = req.params;
-    const { textContent, linkPreview, postType } = req.body;
+    const { textContent, linkPreview, postType, projectId } = req.body;
     const { provided: attachedLicksProvided, ids: attachedLickIdsInput } = normalizeIdListInput(
       req.body.attachedLickIds ?? req.body.attachedLicks
     );
@@ -782,6 +782,40 @@ export const updatePost = async (req, res) => {
     if (textContent !== undefined) post.textContent = textContent;
     if (linkPreview !== undefined) {
       post.linkPreview = typeof linkPreview === 'string' ? JSON.parse(linkPreview) : linkPreview;
+    }
+    
+    // Update projectId (optional)
+    if (projectId !== undefined) {
+      if (!projectId) {
+        // Cho phép bỏ liên kết project khỏi bài viết
+        post.projectId = null;
+      } else {
+        const projectIdInput = projectId;
+        if (!mongoose.Types.ObjectId.isValid(projectIdInput)) {
+          return res.status(400).json({
+            success: false,
+            message: 'ID của project không hợp lệ',
+          });
+        }
+
+        const project = await Project.findById(projectIdInput);
+        if (!project) {
+          return res.status(404).json({
+            success: false,
+            message: 'Project không tồn tại',
+          });
+        }
+
+        // Chỉ cho phép gắn project có trạng thái active
+        if (project.status !== 'active') {
+          return res.status(400).json({
+            success: false,
+            message: 'Chỉ có thể chọn project có trạng thái active',
+          });
+        }
+
+        post.projectId = project._id;
+      }
     }
     
     // Handle uploaded files
@@ -891,7 +925,7 @@ export const updatePost = async (req, res) => {
     const populatedPost = await Post.findById(updatedPost._id)
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
-      .populate('projectId', 'title description coverImageUrl status')
+      .populate('projectId', 'title description coverImageUrl status audioUrl waveformData audioDuration')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .lean();
 
@@ -1119,7 +1153,7 @@ export const getArchivedPosts = async (req, res) => {
     })
       .populate('userId', 'username displayName avatarUrl')
       .populate('originalPostId')
-      .populate('projectId', 'title description coverImageUrl status')
+      .populate('projectId', 'title description coverImageUrl status audioUrl waveformData audioDuration')
       .populate('attachedLicks', 'title description audioUrl waveformData duration tabNotation key tempo difficulty status isPublic createdAt updatedAt')
       .sort({ archivedAt: -1 })
       .skip(skip)

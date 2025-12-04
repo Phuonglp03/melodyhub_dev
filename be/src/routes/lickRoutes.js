@@ -18,7 +18,7 @@ import {
   // addLickComment,
 } from "../controllers/lickController.js";
 import { uploadAudio } from "../middleware/file.js";
-import { verifyToken } from "../middleware/auth.js";
+import { verifyToken, optionalVerifyToken } from "../middleware/auth.js";
 
 const jsonParser = express.json({ limit: "2mb" });
 
@@ -49,10 +49,12 @@ router.post("/", verifyToken, uploadAudio.single("audio"), createLick);
 router.post("/generate-tab", uploadAudio.single("audio"), generateTab);
 
 // GET /api/licks/:lickId/play - Play/stream lick audio
-router.get("/:lickId/play", playLickAudio);
+// Sử dụng optionalVerifyToken để cho phép owner nghe lick private/pending
+router.get("/:lickId/play", optionalVerifyToken, playLickAudio);
 
-// GET /api/licks/:lickId - Get lick by ID with full details
-router.get("/:lickId", getLickById);
+// GET /api/licks/:lickId - Get lick by ID với đầy đủ thông tin
+// Sử dụng optionalVerifyToken để owner vẫn xem được lick riêng tư
+router.get("/:lickId", optionalVerifyToken, getLickById);
 
 // POST /api/licks/:lickId/like - Like/Unlike a lick
 router.post("/:lickId/like", verifyToken, jsonParser, toggleLickLike);

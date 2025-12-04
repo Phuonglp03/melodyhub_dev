@@ -602,9 +602,20 @@ export const getMyLicks = async (req, res) => {
 export const getLickById = async (req, res) => {
   try {
     const { lickId } = req.params;
+    const requesterId = req.userId;
+
+    const baseMatch = { _id: new mongoose.Types.ObjectId(lickId) };
+    const privacyMatch = requesterId
+      ? {
+          $or: [
+            { isPublic: true },
+            { userId: new mongoose.Types.ObjectId(requesterId) },
+          ],
+        }
+      : { isPublic: true };
 
     const lick = await Lick.aggregate([
-      { $match: { _id: new mongoose.Types.ObjectId(lickId), isPublic: true } },
+      { $match: { ...baseMatch, ...privacyMatch } },
       {
         $lookup: {
           from: "users",
@@ -818,7 +829,9 @@ export const toggleLickLike = async (req, res) => {
 export const playLickAudio = async (req, res) => {
   try {
     const { lickId } = req.params;
-    const { userId } = req.query; // Optional: for tracking plays per user
+    const queryUserId = req.query.userId;
+    const authUserId = req.userId;
+    const userId = authUserId || queryUserId; // ưu tiên userId từ token
 
     // Find the lick
     const lick = await Lick.findById(lickId);
@@ -830,8 +843,8 @@ export const playLickAudio = async (req, res) => {
       });
     }
 
-    // Check if lick is public or if user is the owner
-    if (!lick.isPublic && lick.userId.toString() !== userId) {
+    // Check if lick is public or if requester is the owner
+    if (!lick.isPublic && (!userId || lick.userId.toString() !== String(userId))) {
       return res.status(403).json({
         success: false,
         message: "You don't have permission to play this lick",

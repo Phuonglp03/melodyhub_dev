@@ -302,6 +302,24 @@ export const getUserProjects = async (req, res) => {
       .filter((c) => c.status === "pending")
       .map((c) => c.projectId);
 
+    // Check for data integrity issues: pending collaborations for projects the user owns
+    if (pendingProjectIds.length > 0) {
+      const ownedProjectsWithPending = await Project.find({
+        _id: { $in: pendingProjectIds },
+        creatorId: userObjectId,
+      }).select("_id title").lean();
+      
+      if (ownedProjectsWithPending.length > 0) {
+        console.warn("(IS $) [Projects:getUserProjects] DATA INTEGRITY ISSUE: Found pending collaborations for projects user owns:", {
+          userId,
+          ownedProjectsWithPending: ownedProjectsWithPending.map(p => ({
+            projectId: p._id.toString(),
+            title: p.title,
+          })),
+        });
+      }
+    }
+
     console.log("(IS $) [Projects:getUserProjects] Collaborations snapshot:", {
       userId,
       filter,
@@ -350,10 +368,12 @@ export const getUserProjects = async (req, res) => {
       .sort({ updatedAt: -1 });
 
     // Fetch project details for pending invitations so the UI can render cards
+    // IMPORTANT: Exclude projects where the user is the owner (owners shouldn't see invitations to their own projects)
     let pendingInvitations = [];
     if (pendingProjectIds.length > 0) {
       const pendingProjects = await Project.find({
         _id: { $in: pendingProjectIds },
+        creatorId: { $ne: userObjectId }, // Exclude projects owned by the user
       })
         .populate("creatorId", "username displayName avatarUrl")
         .sort({ updatedAt: -1 });
@@ -364,19 +384,33 @@ export const getUserProjects = async (req, res) => {
           .map((c) => [String(c.projectId), c])
       );
 
-      pendingInvitations = pendingProjects.map((project) => {
-        const collab = pendingById.get(String(project._id));
-        return {
-          _id: project._id,
-          title: project.title || project.name || "Untitled Project",
-          description: project.description || "",
-          status: project.status,
-          creatorId: project.creatorId,
-          invitationRole: collab?.role || "contributor",
-          updatedAt: project.updatedAt,
-          createdAt: project.createdAt,
-        };
-      });
+      pendingInvitations = pendingProjects
+        .filter((project) => {
+          // Double-check: ensure user is not the owner (safety check)
+          const isOwner = project.creatorId?._id?.toString() === userId || 
+                         project.creatorId?.toString() === userId;
+          if (isOwner) {
+            console.warn("(IS $) [Projects:getUserProjects] Filtered out owned project from pending invitations:", {
+              projectId: project._id.toString(),
+              userId,
+              creatorId: project.creatorId?._id?.toString() || project.creatorId?.toString(),
+            });
+          }
+          return !isOwner;
+        })
+        .map((project) => {
+          const collab = pendingById.get(String(project._id));
+          return {
+            _id: project._id,
+            title: project.title || project.name || "Untitled Project",
+            description: project.description || "",
+            status: project.status,
+            creatorId: project.creatorId,
+            invitationRole: collab?.role || "contributor",
+            updatedAt: project.updatedAt,
+            createdAt: project.createdAt,
+          };
+        });
     }
 
     res.json({
@@ -3317,6 +3351,14 @@ export const inviteCollaborator = async (req, res) => {
       });
     }
 
+    // Check if target user is the project owner (they're already a collaborator)
+    if (targetUser._id.toString() === project.creatorId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: "The project owner is already a collaborator",
+      });
+    }
+
     let collaborator = await ProjectCollaborator.findOne({
       projectId: project._id,
       userId: targetUser._id,
@@ -3350,6 +3392,20 @@ export const inviteCollaborator = async (req, res) => {
         project.name ||
         project.projectName ||
         "Dự án chưa đặt tên";
+      
+      // Debug logging to verify correct user IDs
+      console.log("(IS $) [CollabInvite] Sending notification:", {
+        projectId: project._id.toString(),
+        projectTitle,
+        inviterId: inviterId.toString(),
+        inviterEmail: (await User.findById(inviterId).select('email').lean())?.email,
+        invitedUserId: targetUser._id.toString(),
+        invitedUserEmail: targetUser.email,
+        projectOwnerId: project.creatorId.toString(),
+        isInviterOwner: inviterId.toString() === project.creatorId.toString(),
+        isInvitedOwner: targetUser._id.toString() === project.creatorId.toString(),
+      });
+      
       await notifyProjectCollaboratorInvited({
         projectId: project._id,
         projectTitle,

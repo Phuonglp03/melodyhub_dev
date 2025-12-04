@@ -96,3 +96,50 @@ export const replaceContentTags = async (req, res) => {
   }
   res.json({ success: true });
 };
+
+// GET /api/tags/search?q=query - Search/suggest tags
+export const searchTags = async (req, res) => {
+  try {
+    const { q = "" } = req.query;
+    const query = q.trim().toLowerCase();
+
+    console.log("[DEBUG] (IS $) Tag search request:", { query, originalQ: req.query.q });
+
+    let tagQuery = {};
+    
+    // If query is empty, return all tags (limit to reasonable number)
+    // If query has characters, filter by matching name
+    if (query.length > 0) {
+      tagQuery.name = { $regex: query, $options: "i" };
+    }
+
+    console.log("[DEBUG] (IS $) Tag query:", tagQuery);
+
+    const tags = await Tag.find(tagQuery)
+      .sort({ name: 1 })
+      .limit(50) // Limit results for performance
+      .lean();
+
+    console.log("[DEBUG] (IS $) Found tags:", tags.length);
+
+    const formattedTags = tags.map((tag) => ({
+      tag_id: tag._id,
+      tag_name: tag.name,
+      tag_type: tag.type,
+    }));
+
+    console.log("[DEBUG] (IS $) Formatted tags:", formattedTags.length);
+
+    res.json({
+      success: true,
+      data: formattedTags,
+    });
+  } catch (error) {
+    console.error("[DEBUG] (IS $) Error searching tags:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to search tags",
+      error: error.message,
+    });
+  }
+};

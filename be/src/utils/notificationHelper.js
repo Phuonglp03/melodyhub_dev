@@ -302,9 +302,36 @@ export const notifyProjectCollaboratorInvited = async ({
   invitedUserId,
 }) => {
   try {
+    // Debug logging to verify correct user IDs
+    console.log("(IS $) [Notification] notifyProjectCollaboratorInvited called:", {
+      projectId: projectId?.toString(),
+      inviterId: inviterId?.toString(),
+      invitedUserId: invitedUserId?.toString(),
+      inviterIdType: typeof inviterId,
+      invitedUserIdType: typeof invitedUserId,
+    });
+
     const inviter = await User.findById(inviterId)
-      .select('displayName username')
+      .select('displayName username email')
       .lean();
+
+    const invitedUser = await User.findById(invitedUserId)
+      .select('displayName username email')
+      .lean();
+
+    // Additional debug logging
+    console.log("(IS $) [Notification] User details:", {
+      inviter: {
+        id: inviter?._id?.toString(),
+        email: inviter?.email,
+        name: inviter?.displayName || inviter?.username,
+      },
+      invitedUser: {
+        id: invitedUser?._id?.toString(),
+        email: invitedUser?.email,
+        name: invitedUser?.displayName || invitedUser?.username,
+      },
+    });
 
     const inviterName =
       inviter?.displayName || inviter?.username || 'Một nhạc sĩ';
@@ -312,6 +339,13 @@ export const notifyProjectCollaboratorInvited = async ({
     const safeProjectTitle = projectTitle || 'Dự án MelodyHub';
     const message = `${inviterName} đã mời bạn cộng tác vào dự án ${safeProjectTitle}`;
     const linkUrl = `/projects/${projectId}`;
+
+    // Final check before creating notification
+    console.log("(IS $) [Notification] Creating notification with:", {
+      userId: invitedUserId?.toString(),
+      actorId: inviterId?.toString(),
+      message,
+    });
 
     return await createNotification({
       userId: invitedUserId,
