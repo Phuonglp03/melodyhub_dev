@@ -447,30 +447,16 @@ export const register = async (req, res) => {
       });
     }
 
-    // Địa chỉ chi tiết (addressLine) chỉ là phần bổ sung (số nhà, tên đường),
-    // nên KHÔNG bắt buộc khi đăng ký. Người dùng chỉ cần chọn Tỉnh/Quận/Phường.
-    const requiredAddressFields = [
-      { value: provinceCode, message: 'Vui lòng chọn tỉnh/thành phố' },
-      { value: provinceName, message: 'Vui lòng chọn tỉnh/thành phố' },
-      { value: districtCode, message: 'Vui lòng chọn quận/huyện' },
-      { value: districtName, message: 'Vui lòng chọn quận/huyện' },
-      { value: wardCode, message: 'Vui lòng chọn phường/xã' },
-      { value: wardName, message: 'Vui lòng chọn phường/xã' }
-    ];
-
-    for (const field of requiredAddressFields) {
-      if (!field.value || (typeof field.value === 'string' && !field.value.trim())) {
-        return res.status(400).json({ message: field.message });
-      }
-    }
-
+    // Các trường địa chỉ không bắt buộc khi đăng ký
     const normalizedAddressLine =
       typeof addressLine === 'string' ? addressLine.trim() : '';
+    
+    // Tạo fullLocation từ các trường địa chỉ (nếu có)
     const fullLocation = [
       normalizedAddressLine,
-      wardName.trim(),
-      districtName.trim(),
-      provinceName.trim()
+      wardName ? wardName.trim() : '',
+      districtName ? districtName.trim() : '',
+      provinceName ? provinceName.trim() : ''
     ].filter(Boolean).join(', ');
 
     // Check if user already exists
@@ -507,14 +493,14 @@ export const register = async (req, res) => {
       displayName: fullName,
       birthday: birthday ? new Date(birthday) : null,
       gender: normalizedGender,
-      addressLine: normalizedAddressLine,
-      provinceCode: provinceCode.toString(),
-      provinceName: provinceName.trim(),
-      districtCode: districtCode.toString(),
-      districtName: districtName.trim(),
-      wardCode: wardCode.toString(),
-      wardName: wardName.trim(),
-      location: fullLocation,
+      addressLine: normalizedAddressLine || undefined,
+      provinceCode: provinceCode ? provinceCode.toString() : undefined,
+      provinceName: provinceName ? provinceName.trim() : undefined,
+      districtCode: districtCode ? districtCode.toString() : undefined,
+      districtName: districtName ? districtName.trim() : undefined,
+      wardCode: wardCode ? wardCode.toString() : undefined,
+      wardName: wardName ? wardName.trim() : undefined,
+      location: fullLocation || undefined,
       otp,
       otpExpires,
       verifiedEmail: false,
@@ -574,8 +560,19 @@ const generateResetToken = () => {
 
 // Send reset password email
 const sendResetPasswordEmail = async (email, resetToken) => {
-  // Sử dụng biến môi trường FRONTEND_URL nếu có, fallback về localhost khi dev
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  // Sử dụng biến môi trường FRONTEND_URL nếu có
+  // Fallback: production -> https://melodyhub.website, development -> localhost:3000
+  let frontendUrl = process.env.FRONTEND_URL;
+  
+  if (!frontendUrl) {
+    if (process.env.NODE_ENV === 'production') {
+      frontendUrl = 'https://melodyhub.website';
+      console.warn('⚠️  FRONTEND_URL not set in production, using default: https://melodyhub.website');
+    } else {
+      frontendUrl = 'http://localhost:3000';
+    }
+  }
+  
   const resetLink = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
   const subject = 'Your Password Reset Request';
   const html = `
@@ -618,6 +615,15 @@ const sendResetPasswordEmail = async (email, resetToken) => {
 // Forgot password controller
 export const forgotPassword = async (req, res) => {
   try {
+    // Check for validation errors from express-validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
     const { email } = req.body;
 
     // Validate email
@@ -625,9 +631,12 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ message: 'Please provide an email address' });
     }
 
+    // Normalize email (lowercase, trim) to match database
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Find user by email
     // Assume 'User' is your Mongoose/database model
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
 
     // Always return success to prevent email enumeration attack
     if (!user) {
@@ -638,7 +647,8 @@ export const forgotPassword = async (req, res) => {
 
     // Generate reset token
     const resetToken = generateResetToken();
-    const resetTokenExpiry = Date.now() + 3600000; // 1 hour (3600000 ms) from now
+    // Tạo Date object cho expiry (1 giờ từ bây giờ)
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour (3600000 ms) from now
 
     // Save reset token
     user.resetPasswordToken = resetToken;
@@ -660,28 +670,76 @@ export const forgotPassword = async (req, res) => {
 // Reset password controller
 export const resetPassword = async (req, res) => {
   try {
-    // Assume 'token' and 'email' are passed from the query string and 'newPassword' from the body
-    const { token, email, newPassword } = req.body;
-
-    // Validate input
-    if (!token || !email || !newPassword) {
+    // Check for validation errors from express-validator
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      console.error('Reset password validation errors:', errors.array());
       return res.status(400).json({
-        message: 'Missing required information'
+        message: 'Validation failed',
+        errors: errors.array()
       });
     }
 
+    // Assume 'token' and 'email' are passed from the query string and 'newPassword' from the body
+    const { token, email, newPassword } = req.body;
+
+    // Log received data for debugging (only first few chars of token for security)
+    console.log('Reset password request:', { 
+      email, 
+      tokenLength: token?.length, 
+      tokenPreview: token ? token.substring(0, 8) + '...' : 'missing',
+      hasNewPassword: !!newPassword,
+      newPasswordLength: newPassword?.length 
+    });
+
+    // Validate input (double check, though express-validator should have caught this)
+    if (!token || !email || !newPassword) {
+      console.error('Reset password missing fields:', { 
+        hasToken: !!token, 
+        hasEmail: !!email, 
+        hasNewPassword: !!newPassword 
+      });
+      return res.status(400).json({
+        message: 'Missing required information: token, email, and newPassword are required'
+      });
+    }
+
+    // Normalize email
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Find user by email, matching token, and checking expiration
     const user = await User.findOne({
-      email,
+      email: normalizedEmail,
       resetPasswordToken: token,
       // Dùng Date thay vì số để so sánh chính xác với kiểu Date trong MongoDB
       resetPasswordExpires: { $gt: new Date() }
     });
 
     if (!user) {
-      return res.status(400).json({
-        message: 'Invalid or expired password reset link'
+      // Try to find user without expiration check to see if token exists but expired
+      const userWithToken = await User.findOne({
+        email: normalizedEmail,
+        resetPasswordToken: token
       });
+      
+      if (userWithToken) {
+        console.error('Reset password failed - token expired:', { 
+          email: normalizedEmail, 
+          expiresAt: userWithToken.resetPasswordExpires,
+          now: new Date()
+        });
+        return res.status(400).json({
+          message: 'Password reset link has expired. Please request a new one.'
+        });
+      } else {
+        console.error('Reset password failed - invalid token or email:', { 
+          email: normalizedEmail, 
+          tokenPreview: token.substring(0, 8) + '...' 
+        });
+        return res.status(400).json({
+          message: 'Invalid password reset link. Please check your email and try again.'
+        });
+      }
     }
 
     // Cập nhật mật khẩu mới (sẽ được hash trong pre-save hook của User model)
@@ -693,12 +751,16 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
+    console.log('Password reset successful for user:', email);
     res.status(200).json({
       message: 'Password reset successful. You can now log in with your new password.'
     });
   } catch (error) {
     console.error('Error in resetPassword:', error);
-    res.status(500).json({ message: 'An error occurred. Please try again later.' });
+    res.status(500).json({ 
+      message: 'An error occurred. Please try again later.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 

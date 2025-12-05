@@ -431,33 +431,77 @@ export const createPlaylist = async (req, res) => {
 
       // Build query based on playlist privacy
       // Business Rule: Public playlists can only contain public licks
-      // Private playlists can contain both public and private licks
+      // Private playlists can contain both public and private licks (owned by user)
       const lickQuery = { _id: { $in: validLickIds } };
+
       if (newPlaylist.isPublic) {
-        lickQuery.isPublic = true; // Only public licks for public playlists
+        // Only public licks for public playlists
+        lickQuery.isPublic = true;
+      } else {
+        // For private playlists: public licks OR private licks owned by user
+        // Optimize query at database level instead of filtering in memory
+        lickQuery.$or = [
+          { isPublic: true },
+          { isPublic: false, userId: new mongoose.Types.ObjectId(userId) },
+        ];
       }
-      // For private playlists, no isPublic filter (can include both)
 
-      const existingLicks = await Lick.find(lickQuery).select("_id isPublic");
+      const existingLicks = await Lick.find(lickQuery)
+        .select("_id isPublic userId")
+        .lean(); // Use lean() for better performance when we only need plain objects
 
-      // Double-check: if playlist is public, filter out any private licks
-      const allowedLicks = newPlaylist.isPublic
-        ? existingLicks.filter((lick) => lick.isPublic === true)
-        : existingLicks;
+      // Validate that all requested licks were found and allowed
+      const foundLickIds = new Set(
+        existingLicks.map((lick) => lick._id.toString())
+      );
+      const missingLickIds = validLickIds.filter((id) => !foundLickIds.has(id));
 
-      const existingLickIds = allowedLicks.map((lick) => lick._id.toString());
+      if (missingLickIds.length > 0) {
+        if (newPlaylist.isPublic) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Public playlists can only contain public licks. Some selected licks are private or not found.",
+          });
+        } else {
+          // For private playlists, check missing licks in a single optimized query
+          // Query all missing licks to determine if they exist and are valid
+          const missingLicks = await Lick.find({
+            _id: { $in: missingLickIds },
+          })
+            .select("_id isPublic userId")
+            .lean();
 
-      // Check if any private licks were filtered out
-      if (
-        newPlaylist.isPublic &&
-        existingLicks.length !== allowedLicks.length
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Public playlists can only contain public licks. Some selected licks are private.",
-        });
+          const missingLickIdsSet = new Set(
+            missingLicks.map((lick) => lick._id.toString())
+          );
+          const nonExistentLickIds = missingLickIds.filter(
+            (id) => !missingLickIdsSet.has(id)
+          );
+
+          // Check for invalid private licks (private licks from other users)
+          const invalidLicks = missingLicks.filter(
+            (lick) => !lick.isPublic && String(lick.userId) !== String(userId)
+          );
+
+          if (invalidLicks.length > 0) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Private playlists can only contain your own private licks or community licks.",
+            });
+          }
+
+          if (nonExistentLickIds.length > 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Some selected licks were not found.",
+            });
+          }
+        }
       }
+
+      const existingLickIds = existingLicks.map((lick) => lick._id.toString());
 
       // Add licks to playlist with positions
       const playlistLicksToAdd = existingLickIds.map((lickId, index) => ({
@@ -709,8 +753,8 @@ export const addLickToPlaylist = async (req, res) => {
       });
     }
 
-    // Validate lick exists
-    const lick = await Lick.findById(lickId);
+    // Validate lick exists - use lean() for better performance since we only need plain object
+    const lick = await Lick.findById(lickId).select("isPublic userId").lean();
     if (!lick) {
       return res.status(404).json({
         success: false,
@@ -724,6 +768,18 @@ export const addLickToPlaylist = async (req, res) => {
         success: false,
         message: "Public playlists can only contain public licks",
       });
+    }
+
+    // Business Rule: If playlist is private and lick is private,
+    // only allow if the lick belongs to the playlist owner
+    if (!playlist.isPublic && !lick.isPublic) {
+      if (String(lick.userId) !== String(userId)) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Private playlists can only contain your own private licks or community licks",
+        });
+      }
     }
 
     // Check if lick is already in playlist
@@ -790,7 +846,7 @@ export const removeLickFromPlaylist = async (req, res) => {
     }
 
     // Validate playlist exists and user owns it
-    const playlist = await Playlist.findById(playlistId);
+    const playlist = await Playlist.findById(playlistId).lean();
     if (!playlist) {
       return res.status(404).json({
         success: false,
@@ -805,6 +861,23 @@ export const removeLickFromPlaylist = async (req, res) => {
       });
     }
 
+    // Get the lick being removed to know its position
+    const lickToRemove = await PlaylistLick.findOne({
+      playlistId,
+      lickId,
+    })
+      .select("position")
+      .lean();
+
+    if (!lickToRemove) {
+      return res.status(404).json({
+        success: false,
+        message: "Lick not found in this playlist",
+      });
+    }
+
+    const removedPosition = lickToRemove.position;
+
     // Remove lick from playlist
     const result = await PlaylistLick.deleteOne({ playlistId, lickId });
 
@@ -814,6 +887,17 @@ export const removeLickFromPlaylist = async (req, res) => {
         message: "Lick not found in this playlist",
       });
     }
+
+    // Reorder positions: decrement positions of all licks after the removed one
+    await PlaylistLick.updateMany(
+      {
+        playlistId,
+        position: { $gt: removedPosition },
+      },
+      {
+        $inc: { position: -1 },
+      }
+    );
 
     res.status(200).json({
       success: true,

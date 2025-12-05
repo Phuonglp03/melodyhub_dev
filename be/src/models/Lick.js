@@ -33,6 +33,8 @@ const lickSchema = new mongoose.Schema(
 
 lickSchema.index({ userId: 1 });
 lickSchema.index({ createdAt: -1 });
+// Compound index for efficient queries on isPublic and userId (used in playlist validation)
+lickSchema.index({ isPublic: 1, userId: 1 });
 // Text index for efficient search on title and description
 lickSchema.index({ title: "text", description: "text" });
 

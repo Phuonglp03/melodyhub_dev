@@ -1052,6 +1052,164 @@ export const getFollowingList = async (req, res) => {
   }
 };
 
+// Get list of followers for a specific user
+export const getFollowersList = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const search = req.query.search || '';
+    const limit = parseInt(req.query.limit) || 50;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+      });
+    }
+
+    // Validate userId format
+    if (userId.length !== 24 || !/^[0-9a-fA-F]{24}$/.test(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+      });
+    }
+
+    // Get list of user IDs that follow this user
+    const followerRelations = await UserFollow.find({ followingId: userId })
+      .select('followerId')
+      .lean();
+    
+    const followerIds = followerRelations.map(f => f.followerId);
+
+    if (followerIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // Build query for users
+    let userQuery = {
+      _id: { $in: followerIds },
+      isActive: true,
+    };
+
+    // Apply search filter in query if provided
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      userQuery.$or = [
+        { displayName: searchRegex },
+        { username: searchRegex },
+      ];
+    }
+
+    // Fetch users directly
+    const users = await User.find(userQuery)
+      .select('username displayName avatarUrl isActive')
+      .limit(limit)
+      .lean();
+
+    // Map to response format
+    let followers = users.map((user) => ({
+      id: user._id,
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: normalizeAvatarUrl(user.avatarUrl),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: followers,
+    });
+  } catch (error) {
+    console.error('Error getting followers list:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+};
+
+// Get list of users that a specific user is following
+export const getUserFollowingList = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const search = req.query.search || '';
+    const limit = parseInt(req.query.limit) || 50;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+      });
+    }
+
+    // Validate userId format
+    if (userId.length !== 24 || !/^[0-9a-fA-F]{24}$/.test(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+      });
+    }
+
+    // Get list of user IDs that this user is following
+    const followingRelations = await UserFollow.find({ followerId: userId })
+      .select('followingId')
+      .lean();
+    
+    const followingIds = followingRelations.map(f => f.followingId);
+
+    if (followingIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // Build query for users
+    let userQuery = {
+      _id: { $in: followingIds },
+      isActive: true,
+    };
+
+    // Apply search filter in query if provided
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      userQuery.$or = [
+        { displayName: searchRegex },
+        { username: searchRegex },
+      ];
+    }
+
+    // Fetch users directly
+    const users = await User.find(userQuery)
+      .select('username displayName avatarUrl isActive')
+      .limit(limit)
+      .lean();
+
+    // Map to response format
+    let followingUsers = users.map((user) => ({
+      id: user._id,
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: normalizeAvatarUrl(user.avatarUrl),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: followingUsers,
+    });
+  } catch (error) {
+    console.error('Error getting following list:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message,
+    });
+  }
+};
+
 // Search users by displayName or username
 export const searchUsers = async (req, res) => {
   try {

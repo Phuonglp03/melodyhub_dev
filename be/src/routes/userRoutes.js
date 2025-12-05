@@ -12,6 +12,8 @@ import {
   unfollowUser,
   getFollowSuggestions,
   getFollowingList,
+  getFollowersList,
+  getUserFollowingList,
   searchUsers
 } from '../controllers/userController.js';
 import middlewareController from '../middleware/auth.js';
@@ -131,6 +133,12 @@ router.get('/profile', verifyToken, getCurrentUserProfile);
 // GET /api/users/following - Get list of users that current user is following (requires authentication)
 // MUST be before /:userId route to avoid conflict
 router.get('/following', verifyToken, getFollowingList);
+
+// GET /api/users/:userId/followers - Get list of followers for a specific user (public)
+router.get('/:userId/followers', optionalVerifyToken, getFollowersList);
+
+// GET /api/users/:userId/following - Get list of users that a specific user is following (public)
+router.get('/:userId/following', optionalVerifyToken, getUserFollowingList);
 
 // GET /api/users/suggestions/list - Suggested users to follow (requires authentication)
 router.get('/suggestions/list', verifyToken, getFollowSuggestions);
