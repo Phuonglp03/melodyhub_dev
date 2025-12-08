@@ -359,10 +359,54 @@ export const socketServer = (httpServer) => {
           return socket.emit("project:error", { message: "Access denied" });
         }
 
-        // Join project room
+        // CRITICAL: If socket is already in this project room, leave first to ensure clean state
+        // This handles the case when user leaves and rejoins the same project
+        const isRejoin = socket.data.projectId === projectId;
+        if (isRejoin) {
+          console.log(
+            `[Socket.IO] Socket ${socket.id} REJOINING project ${projectId}, leaving first for clean rejoin`
+          );
+          socket.leave(`project:${projectId}`);
+          // Clear socket.data before rejoining
+          socket.data.projectId = null;
+          socket.data.userId = null;
+        }
+
+        // Join project room and set socket data IMMEDIATELY
+        // This ensures socket.data is set before any async operations
+        // so that project:action events can be processed correctly
+        // Note: socket.join() is idempotent - safe to call multiple times
         socket.join(`project:${projectId}`);
         socket.data.projectId = projectId;
         socket.data.userId = userId;
+
+        // Get current version to sync client immediately
+        // This prevents version gap issues when client receives updates
+        let currentVersion = 0;
+        if (COLLAB_V2_ENABLED) {
+          try {
+            const collabState = await getCollabState(projectId);
+            currentVersion = collabState?.version || 0;
+          } catch (err) {
+            console.warn(
+              `[Socket.IO] Failed to get version for project ${projectId}:`,
+              err.message
+            );
+            // Continue with version 0 if we can't fetch it
+          }
+        }
+
+        // Emit join confirmation IMMEDIATELY so client knows it's safe to send actions
+        // ALWAYS emit this, even if socket was already in room (for rejoin case)
+        // This must happen BEFORE any async operations to ensure client receives it
+        // Include currentVersion so client can sync immediately and avoid version gaps
+        const confirmationPayload = { projectId, userId, version: currentVersion };
+        socket.emit("project:joined", confirmationPayload);
+        
+        console.log(
+          `[Socket.IO] Socket ${socket.id} ${isRejoin ? 'REJOINED' : 'joined'} project room project:${projectId}, socket.data set, confirmation emitted:`,
+          confirmationPayload
+        );
 
         const user = await User.findById(userId).select(
           "displayName username avatarUrl"
@@ -370,6 +414,8 @@ export const socketServer = (httpServer) => {
 
         if (!user) {
           socket.leave(`project:${projectId}`);
+          socket.data.projectId = null;
+          socket.data.userId = null;
           return socket.emit("project:error", { message: "User not found" });
         }
 
@@ -439,7 +485,27 @@ export const socketServer = (httpServer) => {
 
     socket.on("project:action", async (payload = {}) => {
       const { projectId, userId } = socket.data;
+      console.log(
+        `[Socket.IO] project:action received from socket ${socket.id}:`,
+        {
+          type: payload.type,
+          socketDataProjectId: projectId,
+          socketDataUserId: userId,
+          payloadProjectId: payload.projectId,
+          hasProjectId: !!projectId,
+          hasUserId: !!userId,
+        }
+      );
+      
       if (!projectId || !userId) {
+        console.warn(
+          `[Socket.IO] ⚠️ project:action rejected - socket.data not set:`,
+          {
+            socketId: socket.id,
+            socketData: socket.data,
+            payloadProjectId: payload.projectId,
+          }
+        );
         return socket.emit("project:error", {
           message: "Not in a project room",
         });
@@ -498,6 +564,17 @@ export const socketServer = (httpServer) => {
             payload.collabOpId || operationResult.op.collabOpId || null,
         };
 
+        console.log(
+          `[Socket.IO] ✅ Broadcasting project:update to room project:${projectId}:`,
+          {
+            type: payload.type,
+            senderId: userId,
+            version: operationResult.version,
+            collabOpId: broadcastPayload.collabOpId,
+            socketId: socket.id,
+          }
+        );
+        
         socket
           .to(`project:${projectId}`)
           .emit("project:update", broadcastPayload);
@@ -584,6 +661,16 @@ export const socketServer = (httpServer) => {
             userId,
           });
         }
+      }
+      
+      // Clear socket.data when leaving project to prevent stale state
+      // This ensures clean state when user joins a different project or rejoins
+      if (socket.data.projectId === projectId) {
+        socket.data.projectId = null;
+        socket.data.userId = null;
+        console.log(
+          `[Socket.IO] Socket ${socket.id} left project ${projectId}, socket.data cleared`
+        );
       }
     });
 
@@ -770,6 +857,11 @@ export const socketServer = (httpServer) => {
             console.error("[Socket.IO] presence cleanup error:", err)
           );
       }
+      
+      // Clear socket.data to prevent stale state on reconnect
+      // New socket connection will need to join project again
+      socket.data.projectId = null;
+      socket.data.userId = null;
     });
   });
 
