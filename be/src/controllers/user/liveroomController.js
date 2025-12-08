@@ -578,6 +578,50 @@ export const reportLivestream = async (req, res) => {
 
     await report.save();
 
+    // Emit socket event for admin to receive real-time updates
+    try {
+      const io = getSocketIo();
+      
+      // Populate report with full info for admin panel
+      const populatedReport = await ContentReport.findById(report._id)
+        .populate('reporterId', 'displayName username avatarUrl')
+        .lean();
+      
+      // Get room details
+      const roomDetails = await LiveRoom.findById(roomId)
+        .populate('hostId', 'displayName username avatarUrl')
+        .lean();
+      
+      // Count total pending reports for this room
+      const reportCount = await ContentReport.countDocuments({
+        targetContentType: 'room',
+        targetContentId: roomId,
+        status: 'pending'
+      });
+
+      const reportData = {
+        ...populatedReport,
+        room: roomDetails ? {
+          _id: roomDetails._id,
+          title: roomDetails.title,
+          description: roomDetails.description,
+          status: roomDetails.status,
+          privacyType: roomDetails.privacyType,
+          hostId: roomDetails.hostId,
+          startedAt: roomDetails.startedAt,
+          currentViewers: 0,
+          moderationStatus: roomDetails.moderationStatus || 'active'
+        } : null,
+        reportCount
+      };
+
+      console.log('[ReportLivestream] Emitting new:livestream-report event for reportId:', report._id);
+      io.emit('new:livestream-report', { report: reportData });
+      console.log('[ReportLivestream] Socket event emitted successfully');
+    } catch (socketErr) {
+      console.error('[ReportLivestream] Không thể emit socket event:', socketErr?.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Báo cáo đã được gửi thành công.',

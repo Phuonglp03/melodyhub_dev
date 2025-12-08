@@ -118,12 +118,20 @@ export const googleLogin = async (req, res) => {
     const { accessToken, refreshToken } = await generateTokens(user);
 
     // Set refresh token in HTTP-only cookie
-    res.cookie('refreshToken', refreshToken, {
+    // Cấu hình cookie cho cross-subdomain
+    const googleCookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+      path: '/'
+    };
+    
+    if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+      googleCookieOptions.domain = process.env.COOKIE_DOMAIN;
+    }
+    
+    res.cookie('refreshToken', refreshToken, googleCookieOptions);
 
     // Return user data and access token
     const userData = {

@@ -118,12 +118,21 @@ export const login = async (req, res) => {
     const { accessToken, refreshToken } = await generateTokens(user);
 
     // Set refresh token vào httpOnly cookie
-    res.cookie('refreshToken', refreshToken, {
+    // Cấu hình cookie cho cross-subdomain (melodyhub.website <-> api.melodyhub.website)
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 ngày
-    });
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+      path: '/'
+    };
+    
+    // Thêm domain cho production để cookie hoạt động cross-subdomain
+    if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+      cookieOptions.domain = process.env.COOKIE_DOMAIN; // e.g., '.melodyhub.website'
+    }
+    
+    res.cookie('refreshToken', refreshToken, cookieOptions);
 
     // Trả về access token, refresh token và thông tin user
     res.json({
@@ -195,14 +204,26 @@ export const refreshToken = async (req, res) => {
       await user.save();
 
       // Set refresh token mới vào httpOnly cookie
-      res.cookie('refreshToken', newRefreshToken, {
+      // Cấu hình cookie cho cross-subdomain (melodyhub.website <-> api.melodyhub.website)
+      const cookieOptions = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 ngày
-      });
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+        path: '/'
+      };
+      
+      // Thêm domain cho production để cookie hoạt động cross-subdomain
+      if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+        cookieOptions.domain = process.env.COOKIE_DOMAIN; // e.g., '.melodyhub.website'
+      }
+      
+      res.cookie('refreshToken', newRefreshToken, cookieOptions);
+      
+      // ⭐ QUAN TRỌNG: Trả về cả refreshToken trong response body để frontend có thể lưu
       res.json({
         token: accessToken,
+        refreshToken: newRefreshToken,
         user: {
           id: user._id,
           email: user.email,
@@ -210,8 +231,8 @@ export const refreshToken = async (req, res) => {
           displayName: user.displayName,
           roleId: user.roleId,
           verifiedEmail: user.verifiedEmail,
-          isActive: user.isActive, // ⭐ THÊM isActive
-          permissions: user.permissions || [], // ⭐ THÊM permissions
+          isActive: user.isActive,
+          permissions: user.permissions || [],
           avatarUrl: normalizeAvatarUrl(user.avatarUrl)
         }
       });
@@ -242,12 +263,18 @@ export const logout = async (req, res) => {
     }
 
     // Xóa refresh token cookie
-    res.clearCookie('refreshToken', {
+    const clearCookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       path: '/'
-    });
+    };
+    
+    if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+      clearCookieOptions.domain = process.env.COOKIE_DOMAIN;
+    }
+    
+    res.clearCookie('refreshToken', clearCookieOptions);
 
     res.json({ message: 'Đăng xuất thành công' });
   } catch (error) {
@@ -321,12 +348,20 @@ export const verifyEmail = async (req, res) => {
     const { accessToken, refreshToken } = await generateTokens(user);
 
     // Set refresh token in HTTP-only cookie
-    res.cookie('refreshToken', refreshToken, {
+    // Cấu hình cookie cho cross-subdomain
+    const verifyCookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/'
+    };
+    
+    if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+      verifyCookieOptions.domain = process.env.COOKIE_DOMAIN;
+    }
+    
+    res.cookie('refreshToken', refreshToken, verifyCookieOptions);
 
     res.status(200).json({
       success: true,

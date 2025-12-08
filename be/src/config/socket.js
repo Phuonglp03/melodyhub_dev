@@ -55,18 +55,37 @@ export const socketServer = (httpServer) => {
     },
   });
 
-  const pubClient = createClient({
-    url: process.env.REDIS_URL || "",
-  });
-  const subClient = pubClient.duplicate();
-  Promise.all([pubClient.connect(), subClient.connect()])
-    .then(() => {
-      io.adapter(createAdapter(pubClient, subClient));
-      console.log("[Socket.IO] Đã kết nối Redis Adapter thành công");
-    })
-    .catch((err) => {
-      console.error("[Socket.IO] Lỗi kết nối Redis:", err);
+  // Redis Adapter - only if REDIS_URL is provided
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl && process.env.REDIS_ENABLED !== "false" && process.env.DISABLE_REDIS !== "true") {
+    const pubClient = createClient({
+      url: redisUrl,
+      socket: {
+        reconnectStrategy: (retries) => {
+          if (retries > 3) {
+            console.error("[Socket.IO] Redis Adapter: Max reconnection attempts reached");
+            return false;
+          }
+          return Math.min(retries * 500, 2000);
+        },
+        connectTimeout: 5000,
+      },
     });
+    const subClient = pubClient.duplicate();
+    
+    Promise.all([pubClient.connect(), subClient.connect()])
+      .then(() => {
+        io.adapter(createAdapter(pubClient, subClient));
+        console.log("[Socket.IO] Đã kết nối Redis Adapter thành công");
+      })
+      .catch((err) => {
+        console.error("[Socket.IO] Lỗi kết nối Redis Adapter:", err.message);
+        console.log("[Socket.IO] Tiếp tục chạy KHÔNG có Redis Adapter (single-server mode)");
+      });
+  } else {
+    console.log("[Socket.IO] Redis Adapter disabled hoặc không có REDIS_URL");
+    console.log("[Socket.IO] Chạy ở single-server mode (không hỗ trợ horizontal scaling)");
+  }
 
   io.engine.on("connection_error", (err) => {
     console.error("[Socket.IO] connection_error:", {
