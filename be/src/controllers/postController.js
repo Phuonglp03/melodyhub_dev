@@ -376,24 +376,14 @@ export const getPosts = async (req, res) => {
       console.log('[getPosts] Using collections:', { postLikesCollection, postCommentsCollection });
     }
 
-    // Xác định stage sort dựa trên việc user có follow ai không:
-    // - Nếu có following: ưu tiên bài của người đang follow (isFollowed = true) mới đến bài khác.
-    //   Trong mỗi nhóm, sort theo thời gian tạo (mới nhất trước), sau đó mới đến engagementScore.
-    // - Nếu không có following: giữ nguyên logic cũ, sort theo engagementScore rồi createdAt.
-    const sortStage = hasFollowing
-      ? {
-          $sort: {
-            isFollowed: -1,
-            createdAt: -1,
-            engagementScore: -1,
-          },
-        }
-      : {
-          $sort: {
-            engagementScore: -1,
-            createdAt: -1,
-          },
-        };
+    // Luôn ưu tiên thời gian tạo (mới nhất lên đầu), không ưu tiên theo follow.
+    // Dùng engagementScore làm tie-breaker phụ để tránh thứ tự ngẫu nhiên khi trùng thời gian.
+    const sortStage = {
+      $sort: {
+        createdAt: -1,
+        engagementScore: -1,
+      },
+    };
 
     // Use aggregation pipeline to sort by follow priority + likes + comments
     const pipeline = [
