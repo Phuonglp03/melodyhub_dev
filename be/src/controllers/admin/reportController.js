@@ -531,6 +531,8 @@ export const getActiveLivestreamsAdmin = async (req, res) => {
       .populate('hostId', 'displayName username avatarUrl')
       .sort({ startedAt: -1 });
 
+    const playbackBaseUrl = process.env.MEDIA_SERVER_HTTP_URL || 'http://localhost:8000';
+    
     // Get current viewers for each stream
     const result = await Promise.all(streams.map(async (stream) => {
       let currentViewers = 0;
@@ -542,6 +544,10 @@ export const getActiveLivestreamsAdmin = async (req, res) => {
       }
       return {
         ...stream.toObject(),
+        playbackUrls: {
+          hls: `${playbackBaseUrl}/live/${stream.streamKey}/index.m3u8`,
+          flv: `${playbackBaseUrl}/live/${stream.streamKey}.flv`
+        },
         currentViewers
       };
     }));
@@ -580,6 +586,8 @@ export const getLivestreamReports = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
+    const playbackBaseUrl = process.env.MEDIA_SERVER_HTTP_URL || 'http://localhost:8000';
+    
     // Get room details for each report
     const reportsWithRoomDetails = await Promise.all(
       reports.map(async (report) => {
@@ -603,6 +611,11 @@ export const getLivestreamReports = async (req, res) => {
             privacyType: room.privacyType,
             hostId: room.hostId,
             startedAt: room.startedAt,
+            streamKey: room.streamKey,
+            playbackUrls: {
+              hls: `${playbackBaseUrl}/live/${room.streamKey}/index.m3u8`,
+              flv: `${playbackBaseUrl}/live/${room.streamKey}.flv`
+            },
             currentViewers: room.currentViewers || 0,
             moderationStatus: room.moderationStatus || 'active'
           } : null,
