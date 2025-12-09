@@ -10,6 +10,7 @@
     "start": "node src/server.js",
     "test": "vitest --run",
     "test:watch": "vitest",
+    "test:coverage": "vitest --run --coverage",
     "lint": "echo 'no linter configured'",
     "seed:instruments": "node src/scripts/seedInstruments.js",
     "migrate:project-music": "node src/scripts/migrateProjectMusicFields.js"
@@ -24,6 +25,7 @@
     "@sendgrid/mail": "^8.1.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@tensorflow/tfjs": "^4.22.0",
+    "audiobuffer-to-wav": "^1.0.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
@@ -48,13 +50,14 @@
     "node-media-server": "^2.6.0",
     "nodemailer": "^7.0.9",
     "react-icons": "^5.5.0",
-    "audiobuffer-to-wav": "^1.0.0",
     "redis": "^4.7.1",
     "socket.io": "^4.8.1",
     "streamifier": "^0.1.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
+    "mongodb-memory-server": "^10.4.1",
     "nodemon": "^3.1.7",
     "supertest": "^7.1.1",
     "vitest": "^2.1.8"

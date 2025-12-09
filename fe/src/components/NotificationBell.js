@@ -545,7 +545,9 @@ const NotificationBell = () => {
       onOpenChange={setVisible}
       placement="bottomRight"
       overlayStyle={{ paddingTop: 0 }}
-      overlayInnerStyle={{ padding: 0, background: "#1a1a1a" }}
+      styles={{
+        body: { padding: 0, background: "#1a1a1a" },
+      }}
       zIndex={1000}
     >
       <Badge count={unreadCount} offset={[-5, 5]}>

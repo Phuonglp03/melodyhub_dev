@@ -6,14 +6,35 @@ const SOCKET_URL =
 console.log("[Socket.IO] SOCKET_URL resolved to:", SOCKET_URL);
 
 let socket;
+let currentSocketUserId = null; // Track which user the socket belongs to
 
 export const initSocket = (explicitUserId) => {
-  if (socket) {
-    socket.disconnect();
-  }
   const userId = explicitUserId || store.getState().auth.user?.user?.id;
+  
+  // If socket already exists and connected with same userId, reuse it
+  if (socket && socket.connected && currentSocketUserId === userId) {
+    console.log("[Socket.IO] Reusing existing connection for user", userId);
+    return socket;
+  }
+  
+  // If socket exists but for different user or disconnected, clean up first
+  if (socket) {
+    // Only disconnect if switching users or socket is in bad state
+    if (currentSocketUserId !== userId || !socket.connected) {
+      console.log("[Socket.IO] Cleaning up previous socket");
+      socket.disconnect();
+      socket = null;
+      currentSocketUserId = null;
+    } else {
+      // Socket exists, same user, just not connected yet - let it continue connecting
+      console.log("[Socket.IO] Socket still connecting for user", userId);
+      return socket;
+    }
+  }
+  
   if (userId) {
     console.log("[Socket.IO] Attempting connection to:", SOCKET_URL);
+    currentSocketUserId = userId;
     socket = io(SOCKET_URL, {
       query: { userId: userId },
       transports: ["websocket"],
@@ -42,6 +63,8 @@ export const initSocket = (explicitUserId) => {
       "[Socket.IO] Người dùng chưa đăng nhập, không kết nối socket."
     );
   }
+  
+  return socket;
 };
 
 export const getSocket = () => {
@@ -58,6 +81,7 @@ export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();
     socket = null;
+    currentSocketUserId = null;
   }
 };
 
