@@ -11,18 +11,32 @@ export const getCommunityLicks = async (params = {}) => {
       limit = 20,
     } = params;
 
-    const queryParams = {
-      search,
-      tags,
-      sortBy,
-      page,
-      limit,
-    };
+    const response = await api.get('/licks/community', {
+      params: {
+        search,
+        tags,
+        sortBy,
+        page: page.toString(),
+        limit: limit.toString(),
+      }
+    });
 
-    const { data } = await api.get('/licks/community', { params: queryParams });
-    return data;
+    return response.data;
   } catch (error) {
     console.error("Error fetching community licks:", error);
+    throw error;
+  }
+};
+
+// Get top public licks for leaderboard (sorted by likes on backend)
+export const getTopLicksLeaderboard = async (limit = 10) => {
+  try {
+    const res = await api.get("/licks/leaderboard", {
+      params: { limit: limit.toString() },
+    });
+    return res.data;
+  } catch (error) {
+    console.error("Error fetching top licks leaderboard:", error);
     throw error;
   }
 };
@@ -38,11 +52,24 @@ export const getMyLicks = async (params = {}) => {
   }
 };
 
+// Get licks of a specific user (by userId)
+export const getLicksByUser = async (userId, params = {}) => {
+  try {
+    if (!userId) throw new Error("userId is required");
+    const queryParams = { page: 1, limit: 50, ...params };
+    const res = await api.get(`/licks/user/${userId}`, { params: queryParams });
+    return res.data;
+  } catch (error) {
+    console.error("Error fetching licks by user:", error);
+    throw error;
+  }
+};
+
 // Get lick by ID with full details
 export const getLickById = async (lickId) => {
   try {
-    const { data } = await api.get(`/licks/${lickId}`);
-    return data;
+    const response = await api.get(`/licks/${lickId}`);
+    return response.data;
   } catch (error) {
     console.error("Error fetching lick by ID:", error);
     throw error;
@@ -63,13 +90,13 @@ export const toggleLickLike = async (lickId, userId) => {
 // Get comments for a lick
 export const getLickComments = async (lickId, page = 1, limit = 10) => {
   try {
-    const queryParams = {
-      page,
-      limit,
-    };
-
-    const { data } = await api.get(`/licks/${lickId}/comments`, { params: queryParams });
-    return data;
+    const response = await api.get(`/licks/${lickId}/comments`, {
+      params: {
+        page: page.toString(),
+        limit: limit.toString(),
+      }
+    });
+    return response.data;
   } catch (error) {
     console.error("Error fetching lick comments:", error);
     throw error;
@@ -118,9 +145,9 @@ export const deleteLickComment = async (lickId, commentId) => {
 // Play Lick Audio - Get audio URL for playback
 export const playLickAudio = async (lickId, userId = null) => {
   try {
-    const params = userId ? { userId } : {};
-    const { data } = await api.get(`/licks/${lickId}/play`, { params });
-    return data;
+    const params = userId ? { userId: userId.toString() } : {};
+    const response = await api.get(`/licks/${lickId}/play`, { params });
+    return response.data;
   } catch (error) {
     console.error("Error playing lick audio:", error);
     throw error;
@@ -130,7 +157,9 @@ export const playLickAudio = async (lickId, userId = null) => {
 // Create a new lick with audio file
 export const createLick = async (formData) => {
   try {
-    const res = await api.post(`/licks`, formData);
+    const res = await api.post(`/licks`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
     return res.data;
   } catch (error) {
     console.error("Error creating lick:", error);
@@ -141,8 +170,8 @@ export const createLick = async (formData) => {
 // Update a lick
 export const updateLick = async (lickId, lickData) => {
   try {
-    const { data } = await api.put(`/licks/${lickId}`, lickData);
-    return data;
+    const response = await api.put(`/licks/${lickId}`, lickData);
+    return response.data;
   } catch (error) {
     console.error("Error updating lick:", error);
     throw error;
@@ -152,8 +181,8 @@ export const updateLick = async (lickId, lickData) => {
 // Delete a lick
 export const deleteLick = async (lickId) => {
   try {
-    const { data } = await api.delete(`/licks/${lickId}`);
-    return data;
+    const response = await api.delete(`/licks/${lickId}`);
+    return response.data;
   } catch (error) {
     console.error("Error deleting lick:", error);
     throw error;

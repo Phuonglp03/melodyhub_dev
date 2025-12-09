@@ -6,7 +6,6 @@ import {
   VideoCameraOutlined,
   MinusOutlined,
   CloseOutlined,
-  SmileOutlined,
   LikeOutlined,
   CheckOutlined
 } from '@ant-design/icons';
@@ -17,22 +16,59 @@ import './FloatingChatWindow.css';
 
 const { TextArea } = Input;
 
-const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, isMinimized, onMaximize, position, onConversationUpdate }) => {
+const FloatingChatWindow = ({
+  conversation,
+  currentUserId,
+  onClose,
+  onMinimize,
+  isMinimized,
+  onMaximize,
+  position,
+  onConversationUpdate,
+  dockMode = false,
+  minimizedStyle,
+}) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const windowRef = useRef(null);
   const [peerInfo, setPeerInfo] = useState(null);
+  const getIsMobile = () => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth <= 768;
+  };
+  const [isMobile, setIsMobile] = useState(getIsMobile);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(getIsMobile());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Get peer info
   const getPeer = (conv) => {
-    if (!conv?.participants || !currentUserId) return null;
-    const peer = conv.participants.find((p) => {
-      const pid = typeof p === 'object' ? (p._id || p.id) : p;
-      const cid = typeof currentUserId === 'object' ? (currentUserId._id || currentUserId.id) : currentUserId;
-      return String(pid) !== String(cid);
-    });
-    return peer;
+    if (!conv?.participants || conv.participants.length === 0) return null;
+
+    // Nếu chưa có currentUserId (ví dụ lúc mới mount), tạm thời lấy phần tử đầu tiên
+    if (!currentUserId) {
+      return conv.participants[0];
+    }
+
+    const cid = String(
+      typeof currentUserId === 'object' ? (currentUserId._id || currentUserId.id || currentUserId.userId) : currentUserId
+    );
+
+    const isMe = (p) => {
+      const pid = typeof p === 'object' ? (p._id || p.id || p.userId) : p;
+      return cid && pid && String(pid) === cid;
+    };
+
+    const peer = conv.participants.find((p) => !isMe(p));
+
+    // Nếu không tìm được (dữ liệu lỗi) thì trả null, UI sẽ fallback "Người dùng"
+    return peer || null;
   };
 
   const peer = getPeer(conversation);
@@ -74,11 +110,27 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
     fetchPeerInfo();
   }, [peer, conversation]);
 
-  const peerName = peerInfo?.displayName || peer?.displayName || peerInfo?.username || peer?.username || 'Người dùng';
+  const resolvePeerName = (peerObj, peerInfoObj) => {
+    const displayName = peerInfoObj?.displayName || peerObj?.displayName;
+    const username = peerInfoObj?.username || peerObj?.username;
+
+    // Nếu displayName bị trống / chỉ là "Người dùng" thì ưu tiên username
+    if ((!displayName || displayName.trim().length === 0 || displayName === 'Người dùng') && username) {
+      return username;
+    }
+
+    if (displayName) return displayName;
+    if (username) return username;
+
+    return 'Người dùng';
+  };
+
+  const peerName = resolvePeerName(peer, peerInfo);
   const peerAvatar = peerInfo?.avatarUrl || peer?.avatarUrl;
 
   // Check if current user is requester
-  const isRequester = conversation?.requestedBy && String(conversation.requestedBy) === String(currentUserId);
+  const isRequester =
+    conversation?.requestedBy && String(conversation.requestedBy) === String(currentUserId);
 
   // Messages hook
   const {
@@ -167,13 +219,26 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
 
   // If minimized, show circular avatar with online status indicator and close button
   if (isMinimized) {
-    const bubbleStyle = position ? {
-      bottom: `${position.bottom}px`,
-      right: `${position.right}px`
-    } : {
-      bottom: '20px',
-      right: '20px'
-    };
+    const bubbleStyle = dockMode
+      ? (minimizedStyle || {})
+      : minimizedStyle
+        ? minimizedStyle
+        : isMobile
+          ? {
+              bottom: 16,
+              left: '50%',
+              transform: 'translateX(-50%)'
+            }
+          : position
+            ? {
+                bottom: `${position.bottom}px`,
+                right: `${position.right}px`
+              }
+            : {
+                bottom: '20px',
+                right: '20px'
+              };
+    const bubbleClassName = `floating-chat-avatar-bubble${dockMode ? ' floating-chat-avatar-bubble--dock' : ''}`;
 
     // Check if user is online (active within last 5 minutes)
     const isOnline = () => {
@@ -188,7 +253,7 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
 
     return (
       <div
-        className="floating-chat-avatar-bubble"
+        className={bubbleClassName}
         style={bubbleStyle}
       >
         <div
@@ -206,7 +271,7 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
           )}
         </div>
         <button
-          className="floating-chat-close-button"
+          className={`floating-chat-close-button${dockMode ? ' floating-chat-close-button--dock' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             onClose();
@@ -220,17 +285,28 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
   }
 
   // Full window
-  const windowStyle = position ? {
-    bottom: position.bottom ? `${position.bottom}px` : undefined,
-    top: position.top ? `${position.top}px` : undefined,
-    right: `${position.right}px`
-  } : {
-    bottom: '20px',
-    right: '20px'
-  };
+  const windowStyle = isMobile
+    ? {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh'
+      }
+    : position
+      ? {
+          bottom: position.bottom ? `${position.bottom}px` : undefined,
+          top: position.top ? `${position.top}px` : undefined,
+          right: `${position.right}px`
+        }
+      : {
+          bottom: '20px',
+          right: '20px'
+        };
 
   return (
-    <div className="floating-chat-window" ref={windowRef} style={windowStyle}>
+    <div className={`floating-chat-window${isMobile ? ' floating-chat-window--mobile' : ''}`} ref={windowRef} style={windowStyle}>
       {/* Header */}
       <div className="floating-chat-header">
         <div className="floating-chat-header-left">
@@ -247,16 +323,16 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
           </div>
         </div>
         <div className="floating-chat-header-right">
-          <Button
+          {/* <Button
             type="text"
             icon={<PhoneOutlined />}
             className="floating-chat-header-icon"
-          />
-          <Button
+          /> */}
+          {/* <Button
             type="text"
             icon={<VideoCameraOutlined />}
             className="floating-chat-header-icon"
-          />
+          /> */}
           <Button
             type="text"
             icon={<MinusOutlined />}
@@ -272,8 +348,8 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
         </div>
       </div>
 
-      {/* Pending banner for receiver */}
-      {(conversation?.status === 'pending' && !isRequester) && (
+      {/* Pending / declined banner trong cửa sổ chat */}
+      {conversation?.status === 'pending' && !isRequester && (
         <div className="floating-chat-pending-banner">
           <div className="floating-chat-pending-banner-content">
             <div className="floating-chat-pending-banner-text">
@@ -334,6 +410,30 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
               >
                 Từ chối
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {conversation?.status === 'pending' && isRequester && (
+        <div className="floating-chat-pending-banner floating-chat-pending-banner--requester">
+          <div className="floating-chat-pending-banner-content">
+            <div className="floating-chat-pending-banner-text">
+              <div className="floating-chat-pending-banner-title">Đang chờ chấp nhận yêu cầu</div>
+              <div className="floating-chat-pending-banner-subtitle">
+                Khi người kia chấp nhận, bạn sẽ có thể tiếp tục trò chuyện tại đây.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {conversation?.status === 'declined' && isRequester && (
+        <div className="floating-chat-pending-banner floating-chat-pending-banner--declined">
+          <div className="floating-chat-pending-banner-content">
+            <div className="floating-chat-pending-banner-text">
+              <div className="floating-chat-pending-banner-title">Yêu cầu đã bị từ chối</div>
+              <div className="floating-chat-pending-banner-subtitle">
+                Bạn không thể tiếp tục nhắn tin trong cuộc trò chuyện này.
+              </div>
             </div>
           </div>
         </div>
@@ -419,13 +519,6 @@ const FloatingChatWindow = ({ conversation, currentUserId, onClose, onMinimize, 
           disabled={conversation?.status === 'pending' && String(conversation.requestedBy) !== String(currentUserId)}
         />
         <div className="floating-chat-input-right">
-          <Button
-            type="text"
-            icon={<SmileOutlined />}
-            className="floating-chat-input-icon"
-            title="Emoji"
-            style={{ fontSize: 20 }}
-          />
           <Button
             type="text"
             icon={<LikeOutlined />}

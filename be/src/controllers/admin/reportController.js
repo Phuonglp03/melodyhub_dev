@@ -526,12 +526,15 @@ export const getActiveLivestreamsAdmin = async (req, res) => {
   try {
     const io = getSocketIo();
     
+    // Get playback URL base from environment (same as user controller)
+    const playbackBaseUrl = process.env.MEDIA_SERVER_HTTP_URL || 'http://localhost:8000';
+    
     // Get all rooms with status 'live'
     const streams = await LiveRoom.find({ status: 'live' })
       .populate('hostId', 'displayName username avatarUrl')
       .sort({ startedAt: -1 });
 
-    // Get current viewers for each stream
+    // Get current viewers for each stream and add playbackUrls
     const result = await Promise.all(streams.map(async (stream) => {
       let currentViewers = 0;
       try {
@@ -542,7 +545,12 @@ export const getActiveLivestreamsAdmin = async (req, res) => {
       }
       return {
         ...stream.toObject(),
-        currentViewers
+        currentViewers,
+        // Add playbackUrls for admin to watch streams
+        playbackUrls: {
+          hls: `${playbackBaseUrl}/live/${stream.streamKey}/index.m3u8`,
+          flv: `${playbackBaseUrl}/live/${stream.streamKey}.flv`
+        }
       };
     }));
 

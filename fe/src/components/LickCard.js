@@ -7,6 +7,7 @@ import {
   FaDownload,
   FaMusic,
   FaWaveSquare,
+  FaFolderPlus,
 } from "react-icons/fa";
 import { playLickAudio, getLickById } from "../services/user/lickService";
 import { toggleLickLike } from "../services/user/lickService";
@@ -14,6 +15,7 @@ import { toggleLickLike } from "../services/user/lickService";
 import { useDispatch, useSelector } from "react-redux";
 import { setLikeState, toggleLikeLocal } from "../redux/likesSlice";
 import { getProfileById } from "../services/user/profile";
+import AddToPlaylistModal from "./AddToPlaylistModal";
 
 const LickCard = ({ lick, onClick }) => {
   const {
@@ -135,6 +137,7 @@ const LickCard = ({ lick, onClick }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0); // Track playback progress (0-1)
   const audioRef = useRef(null);
+  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const dispatch = useDispatch();
   const authUser = useSelector((s) => s.auth.user);
   const likeState = useSelector((s) => s.likes.byId[lick_id]);
@@ -259,7 +262,7 @@ const LickCard = ({ lick, onClick }) => {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-gray-700 hover:shadow-lg transition-all">
-      <div className="relative h-32 bg-gray-800" onClick={handlePlayPause}>
+      <div className="relative h-20 bg-gray-800" onClick={handlePlayPause}>
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           {waveform && waveform.length > 0 ? (
             <div className="flex items-end justify-center w-[92%] h-[70%]">
@@ -281,32 +284,32 @@ const LickCard = ({ lick, onClick }) => {
               })}
             </div>
           ) : (
-            <span className="text-gray-500 text-sm">No waveform</span>
+            <span className="text-gray-500 text-[10px]">No waveform</span>
           )}
         </div>
 
         <button
           onClick={handlePlayPause}
-          className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full p-3"
+          className="absolute bottom-1.5 right-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full p-2"
         >
           {isLoading ? (
-            <div className="animate-spin h-5 w-5 border-t-2 border-b-2 border-white rounded-full" />
+            <div className="animate-spin h-4 w-4 border-t-2 border-b-2 border-white rounded-full" />
           ) : isPlaying ? (
-            <FaPause size={16} />
+            <FaPause size={12} />
           ) : (
-            <FaPlay size={16} />
+            <FaPlay size={12} />
           )}
         </button>
       </div>
 
-      <div className="p-4">
+      <div className="p-3">
         <h3
           onClick={() => onClick(effectiveId)}
-          className="text-base font-semibold text-slate-100 mb-2 hover:text-cyan-300 cursor-pointer"
+          className="text-sm font-semibold text-slate-100 mb-1.5 hover:text-cyan-300 cursor-pointer"
         >
           {title}
         </h3>
-        <div className="flex items-center text-xs text-gray-400 mb-3">
+        <div className="flex items-center text-[10px] text-gray-400 mb-2">
           <span className="truncate">
             By{" "}
             {creator?.display_name ||
@@ -326,7 +329,7 @@ const LickCard = ({ lick, onClick }) => {
           ) : null}
           {difficulty ? (
             <span
-              className={`ml-auto px-2 py-0.5 rounded-full text-xs ${
+              className={`ml-auto px-1.5 py-0.5 rounded-full text-[9px] ${
                 difficulty === "beginner"
                   ? "bg-green-900 text-green-300"
                   : difficulty === "intermediate"
@@ -340,12 +343,12 @@ const LickCard = ({ lick, onClick }) => {
         </div>
 
         {tags && tags.length > 0 && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-4">
-            {tags.slice(0, 8).map((tag) => (
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mb-2">
+            {tags.slice(0, 6).map((tag) => (
               <span
                 key={tag.tag_id}
                 onClick={(e) => e.stopPropagation()}
-                className="text-[11px] text-slate-300 underline underline-offset-4 decoration-slate-600/50 hover:text-slate-100 transition-colors"
+                className="text-[9px] text-slate-300 underline underline-offset-2 decoration-slate-600/50 hover:text-slate-100 transition-colors"
               >
                 {tag.tag_name}
               </span>
@@ -353,35 +356,53 @@ const LickCard = ({ lick, onClick }) => {
           </div>
         )}
 
-        <div className="flex items-center text-xs text-slate-300 mb-4">
-          <span className="flex items-center gap-1 mr-4">
-            <FaWaveSquare className="text-slate-400" size={12} />
+        <div className="flex items-center text-[10px] text-slate-300 mb-2.5">
+          <span className="flex items-center gap-1 mr-3">
+            <FaWaveSquare className="text-slate-400" size={10} />
             {tempo ? `${Math.round(tempo)} BPM` : "—"}
           </span>
           <span className="flex items-center gap-1">
-            <FaMusic className="text-slate-400" size={12} />
+            <FaMusic className="text-slate-400" size={10} />
             {key || "Key N/A"}
           </span>
         </div>
 
-        <div className="flex items-center justify-between text-sm text-gray-300">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between text-xs text-gray-300">
+          <div className="flex items-center gap-3">
             <button
               onClick={handleLike}
               className={`flex items-center gap-1 ${
                 isLiked ? "text-rose-400" : "text-gray-300 hover:text-rose-300"
               }`}
             >
-              <FaHeart />
-              <span>{localLikesCount}</span>
+              <FaHeart size={12} />
+              <span className="text-[10px]">{localLikesCount}</span>
             </button>
             <span className="flex items-center gap-1 text-gray-400">
-              <FaComment />
-              <span>{commentsCount}</span>
+              <FaComment size={12} />
+              <span className="text-[10px]">{commentsCount}</span>
             </span>
           </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowPlaylistModal(true);
+            }}
+            className="flex items-center gap-1 text-gray-300 hover:text-orange-400 transition-colors"
+            title="Add to playlist"
+          >
+            <FaFolderPlus size={14} />
+          </button>
         </div>
       </div>
+
+      {/* Add to Playlist Modal */}
+      <AddToPlaylistModal
+        isOpen={showPlaylistModal}
+        onClose={() => setShowPlaylistModal(false)}
+        lickId={effectiveId}
+        lickTitle={title}
+      />
     </div>
   );
 };

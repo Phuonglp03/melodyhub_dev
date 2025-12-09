@@ -1,8 +1,11 @@
 // src/layouts/adminLayout.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../redux/authSlice";
+import NotificationBell from "../components/NotificationBell";
+import NotificationToastContainer from "../components/NotificationToastContainer";
+import api from "../services/api";
 import { 
   Home, 
   UserPlus, 
@@ -10,6 +13,7 @@ import {
   BarChart3, 
   Video, 
   CheckSquare,
+  Sliders,
   Bell,
   User,
   LogOut,
@@ -18,27 +22,159 @@ import {
   ChevronRight
 } from "lucide-react";
 
+// Helper function to determine admin type from permissions
+// Based on PERMISSIONS_MAP:
+// - super_admin: ['manage_users', 'manage_content', 'manage_liverooms', 'handle_support', 'create_admin']
+// - liveroom_admin: ['manage_liverooms', 'manage_content']
+// - user_support: ['handle_support', 'manage_users']
+const getAdminType = (permissions = []) => {
+  if (!permissions || permissions.length === 0) {
+    return { type: 'admin', label: 'Administrator', color: 'text-gray-400' };
+  }
+  
+  // Super Admin: has 'create_admin' permission (unique to Super Admin)
+  if (permissions.includes('create_admin')) {
+    return { type: 'super_admin', label: 'Super Admin', color: 'text-purple-400' };
+  }
+  
+  // Liveroom Admin: has 'manage_liverooms' but NOT 'create_admin'
+  // Also has 'manage_content' typically
+  if (permissions.includes('manage_liverooms') && !permissions.includes('create_admin')) {
+    return { type: 'liveroom_admin', label: 'Liveroom Admin', color: 'text-blue-400' };
+  }
+  
+  // User Support: has 'handle_support' and 'manage_users' but NOT 'create_admin' and NOT 'manage_liverooms'
+  if (permissions.includes('handle_support') && 
+      permissions.includes('manage_users') && 
+      !permissions.includes('create_admin') && 
+      !permissions.includes('manage_liverooms')) {
+    return { type: 'user_support', label: 'User Support', color: 'text-green-400' };
+  }
+  
+  // Fallback: Try to determine by available permissions
+  // If has handle_support but not manage_liverooms -> likely User Support
+  if (permissions.includes('handle_support') && !permissions.includes('manage_liverooms')) {
+    return { type: 'user_support', label: 'User Support', color: 'text-green-400' };
+  }
+  
+  // If has manage_liverooms -> likely Liveroom Admin
+  if (permissions.includes('manage_liverooms')) {
+    return { type: 'liveroom_admin', label: 'Liveroom Admin', color: 'text-blue-400' };
+  }
+  
+  // Default fallback for admin without specific permissions
+  return { type: 'admin', label: 'Administrator', color: 'text-gray-400' };
+};
+
 const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.auth);
+  const { user: authUser } = useSelector((state) => state.auth);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [notificationCount] = useState(3);
+  const [adminProfile, setAdminProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
   const handleLogout = () => {
     dispatch(logout());
     navigate("/login");
   };
 
-  const menuItems = [
-    { path: "/admin/dashboard", icon: Home, label: "Dashboard", color: "from-blue-500 to-cyan-500" },
-    { path: "/admin/create-admin", icon: UserPlus, label: "Create Admin", color: "from-purple-500 to-pink-500" },
-    { path: "/admin/user-management", icon: Users, label: "User List", color: "from-green-500 to-emerald-500" },
-    { path: "/admin/reports-management", icon: BarChart3, label: "Reports ", color: "from-orange-500 to-red-500" },
-    { path: "/admin/liveroom-management", icon: Video, label: "Liverooms", color: "from-violet-500 to-purple-500" },
-    { path: "/admin/lick-approvement", icon: CheckSquare, label: "Lick Approvement", color: "from-teal-500 to-cyan-500" }
+  // Fetch admin profile
+  useEffect(() => {
+    const fetchAdminProfile = async () => {
+      try {
+        const response = await api.get('/admin/profile');
+        const profileData = response.data.data.user;
+        setAdminProfile(profileData);
+      } catch (error) {
+        console.error('Failed to fetch admin profile:', error);
+        // Don't crash if it's just a permission error or network error
+        // Fallback: use authUser data if available
+        if (authUser?.user) {
+          setAdminProfile({
+            displayName: authUser.user.displayName,
+            avatarUrl: authUser.user.avatarUrl,
+            permissions: authUser.user.permissions || []
+          });
+        } else {
+          // If no authUser, set empty profile to prevent infinite loop
+          setAdminProfile({
+            displayName: 'Admin',
+            permissions: []
+          });
+        }
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    if (authUser?.user?.id) {
+      fetchAdminProfile();
+    } else {
+      setLoadingProfile(false);
+    }
+  }, [authUser]);
+
+  // Menu items với permissions required
+  const allMenuItems = [
+    { 
+      path: "/admin/dashboard", 
+      icon: Home, 
+      label: "Dashboard", 
+      color: "from-blue-500 to-cyan-500",
+      permission: null // Tất cả admin đều có thể xem dashboard
+    },
+    { 
+      path: "/admin/create-admin", 
+      icon: UserPlus, 
+      label: "Create Admin", 
+      color: "from-purple-500 to-pink-500",
+      permission: "create_admin" // Chỉ Super Admin
+    },
+    { 
+      path: "/admin/user-management", 
+      icon: Users, 
+      label: "User List", 
+      color: "from-green-500 to-emerald-500",
+      permission: "manage_users" // Super Admin và User Support
+    },
+    { 
+      path: "/admin/reports-management", 
+      icon: BarChart3, 
+      label: "Reports ", 
+      color: "from-orange-500 to-red-500",
+      permission: "handle_support" // Super Admin và User Support
+    },
+    { 
+      path: "/admin/report-settings", 
+      icon: Sliders, 
+      label: "Report Settings", 
+      color: "from-amber-500 to-rose-500",
+      permission: "handle_support" // Super Admin và User Support
+    },
+    { 
+      path: "/admin/liveroom-management", 
+      icon: Video, 
+      label: "Liverooms", 
+      color: "from-violet-500 to-purple-500",
+      permission: "manage_liverooms" // Super Admin và Liveroom Admin
+    },
+    { 
+      path: "/admin/lick-approvement", 
+      icon: CheckSquare, 
+      label: "Lick Approvement", 
+      color: "from-teal-500 to-cyan-500",
+      permission: "manage_content" // Super Admin và Liveroom Admin
+    }
   ];
+
+  // Filter menu items based on permissions
+  const menuItems = allMenuItems.filter(item => {
+    if (!item.permission) return true; // No permission required
+    if (!adminProfile?.permissions) return false; // No permissions = no access
+    return adminProfile.permissions.includes(item.permission);
+  });
 
   const isActive = (path) => location.pathname === path;
 
@@ -110,15 +246,39 @@ const AdminLayout = () => {
         {/* User Info */}
         {sidebarOpen && (
           <div className="absolute bottom-6 left-4 right-4 p-4 bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700/50 backdrop-blur-sm">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                <User size={20} />
+            {loadingProfile ? (
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-full bg-gray-700 animate-pulse"></div>
+                <div className="flex-1">
+                  <div className="h-4 w-24 bg-gray-700 rounded animate-pulse mb-2"></div>
+                  <div className="h-3 w-20 bg-gray-700 rounded animate-pulse"></div>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium">{user?.username || "Admin"}</p>
-                <p className="text-xs text-gray-400">{user?.role || "Administrator"}</p>
+            ) : (
+              <div className="flex items-center space-x-3">
+                <div className="relative">
+                  {adminProfile?.avatarUrl ? (
+                    <img 
+                      src={adminProfile.avatarUrl} 
+                      alt="Admin Avatar" 
+                      className="w-10 h-10 rounded-full object-cover border-2 border-gray-600"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                      <User size={20} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {adminProfile?.displayName || authUser?.user?.username || "Admin"}
+                  </p>
+                  <p className={`text-xs truncate ${getAdminType(adminProfile?.permissions).color}`}>
+                    {getAdminType(adminProfile?.permissions).label}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -133,22 +293,21 @@ const AdminLayout = () => {
               <span className="text-gray-400">Admin</span>
               <ChevronRight size={16} className="text-gray-600" />
               <span className="font-medium">
-                {menuItems.find(item => item.path === location.pathname)?.label || "Dashboard"}
+                {location.pathname === "/admin/profile" 
+                  ? "Admin Profile"
+                  : menuItems.find(item => item.path === location.pathname)?.label || "Dashboard"}
               </span>
             </div>
 
             {/* Actions */}
             <div className="flex items-center space-x-3">
-              <button className="relative p-2.5 hover:bg-gray-800/50 rounded-xl transition-all duration-200 group">
-                <Bell size={20} className="group-hover:scale-110 transition-transform" />
-                {notificationCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-red-500 to-pink-500 rounded-full text-xs flex items-center justify-center font-bold animate-pulse">
-                    {notificationCount}
-                  </span>
-                )}
-              </button>
-              
-              <button className="p-2.5 hover:bg-gray-800/50 rounded-xl transition-all duration-200 group">
+              {/* Notification bell giống phía user */}
+              <NotificationBell />
+
+              <button 
+                onClick={() => navigate("/admin/profile")}
+                className="p-2.5 hover:bg-gray-800/50 rounded-xl transition-all duration-200 group"
+              >
                 <User size={20} className="group-hover:scale-110 transition-transform" />
               </button>
               
@@ -170,6 +329,9 @@ const AdminLayout = () => {
           <Outlet />
         </div>
       </div>
+
+      {/* Toast thông báo giống user layout */}
+      <NotificationToastContainer />
     </div>
   );
 };

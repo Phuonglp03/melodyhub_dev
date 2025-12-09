@@ -9,16 +9,16 @@ export const getNotifications = async ({ page = 1, limit = 20, isRead } = {}) =>
   if (isRead !== undefined) {
     params.isRead = isRead;
   }
-  const { data } = await api.get('/notifications', { params });
-  return data;
+  const res = await api.get('/notifications', { params });
+  return res.data;
 };
 
 /**
  * Lấy số lượng thông báo chưa đọc
  */
 export const getUnreadNotificationCount = async () => {
-  const { data } = await api.get('/notifications/unread/count');
-  return data;
+  const res = await api.get('/notifications/unread/count');
+  return res.data;
 };
 
 /**
@@ -26,16 +26,16 @@ export const getUnreadNotificationCount = async () => {
  * @param {string} notificationId
  */
 export const markNotificationAsRead = async (notificationId) => {
-  const { data } = await api.put(`/notifications/${notificationId}/read`);
-  return data;
+  const res = await api.put(`/notifications/${notificationId}/read`);
+  return res.data;
 };
 
 /**
  * Đánh dấu tất cả thông báo là đã đọc
  */
 export const markAllNotificationsAsRead = async () => {
-  const { data } = await api.put('/notifications/read-all');
-  return data;
+  const res = await api.put('/notifications/read-all');
+  return res.data;
 };
 
 /**
@@ -43,6 +43,27 @@ export const markAllNotificationsAsRead = async () => {
  * @param {string} notificationId
  */
 export const deleteNotification = async (notificationId) => {
-  const { data } = await api.delete(`/notifications/${notificationId}`);
-  return data;
+  const res = await api.delete(`/notifications/${notificationId}`);
+  return res.data;
 };
+
+/**
+ * Accept project invitation
+ * @param {string} projectId
+ */
+export const acceptProjectInvitation = async (projectId) => {
+  const res = await api.post(`/projects/${projectId}/invite/accept`);
+  return res.data;
+};
+
+/**
+ * Decline project invitation
+ * @param {string} projectId
+ */
+export const declineProjectInvitation = async (projectId) => {
+  const res = await api.post(`/projects/${projectId}/invite/decline`);
+  return res.data;
+};
+
+
+

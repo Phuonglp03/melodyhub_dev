@@ -103,13 +103,6 @@ const VerifyOTP = () => {
     } catch (error) {
       console.error('Error resending OTP:', error);
       messageApi.error(error.message || 'Failed to resend OTP code');
-      
-      // If user not found, redirect to appropriate page
-      if (error.message.includes('not found')) {
-        setTimeout(() => {
-          navigate(location.state?.fromLogin ? '/login' : '/register');
-        }, 1500);
-      }
     } finally {
       setLoading(false);
     }

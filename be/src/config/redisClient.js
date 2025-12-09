@@ -79,27 +79,27 @@ export const getRedisClient = async (throwOnError = false) => {
   }
 
   try {
-    if (!redisClient) {
-      redisClient = createRedisClient();
-      connectPromise = redisClient.connect().catch((err) => {
-        console.error("[Redis] failed to connect:", err.message);
+  if (!redisClient) {
+    redisClient = createRedisClient();
+    connectPromise = redisClient.connect().catch((err) => {
+      console.error("[Redis] failed to connect:", err.message);
         connectionFailed = true;
         redisEnabled = false;
-        redisClient = null;
+      redisClient = null;
         connectPromise = null;
         if (throwOnError) throw err;
         return null;
-      });
-    }
+    });
+  }
 
-    if (connectPromise) {
-      await connectPromise;
-      connectPromise = null;
+  if (connectPromise) {
+    await connectPromise;
+    connectPromise = null;
     } else if (redisClient && !redisClient.isOpen) {
-      await redisClient.connect();
-    }
+    await redisClient.connect();
+  }
 
-    return redisClient;
+  return redisClient;
   } catch (err) {
     console.error("[Redis] getRedisClient error:", err.message);
     connectionFailed = true;

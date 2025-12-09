@@ -1,0 +1,77 @@
+.archived-posts-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  /* chừa khoảng trống phía trên để không bị header (có ô search) đè lên */
+  padding: 88px 24px 24px;
+  background: #0a0a0a;
+  min-height: 100vh;
+}
+
+.archived-post-content {
+  margin-bottom: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.archived-post-link-preview {
+  border: 1px solid #303030;
+  border-radius: 8px;
+  padding: 12px;
+  background: #111111;
+  color: #e5e7eb;
+  margin-top: 8px;
+}
+
+.archived-post-link-preview-body {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+@media (max-width: 992px) {
+  .archived-posts-page {
+    padding: 84px 16px 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .archived-posts-page {
+    padding: 80px 12px 16px;
+  }
+
+  .archived-post-card-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 10px;
+  }
+
+  .archived-post-card-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .archived-post-card-header-actions .ant-btn {
+    flex: 1 1 48%;
+  }
+
+  .archived-post-content {
+    font-size: 14px;
+  }
+
+  .archived-post-link-preview {
+    padding: 10px;
+  }
+
+  .archived-post-footer-actions {
+    width: 100%;
+    justify-content: flex-start !important;
+    gap: 8px;
+  }
+}
+
+

@@ -1,6 +1,6 @@
 /* Google Sign-In Wrapper - Enhanced */
 .google-signin-wrapper {
-  width: 100%;
+  width: 100% !important;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -9,6 +9,12 @@
   border-radius: 14px;
   overflow: hidden;
   min-height: 54px;
+  box-sizing: border-box;
+}
+
+.google-signin-wrapper > div {
+  width: 100% !important;
+  box-sizing: border-box;
 }
 
 #googleSignInButton {

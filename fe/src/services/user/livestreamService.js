@@ -73,6 +73,11 @@ const getRoomViewers = async (roomId) => {
   return data;
 };
 
+const checkLivestreamBanStatus = async () => {
+  const { data } = await api.get('/livestreams/ban-status');
+  return data;
+};
+
 
 export const livestreamService = {
   createLiveStream,
@@ -86,4 +91,5 @@ export const livestreamService = {
   unbanUser,
   getActiveLiveStreams,
   getRoomViewers,
+  checkLivestreamBanStatus,
 };

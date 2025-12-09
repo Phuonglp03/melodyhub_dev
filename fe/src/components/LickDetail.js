@@ -105,12 +105,11 @@ const LickDetail = ({
     setIsEditingTab(false);
   }, [lick?.lick_id, lick?.tab_notation, lick?.tabNotation]);
 
-  const displayAvatar = myProfile?.avatarUrl || lick.creator?.avatar_url;
+  const displayAvatar = lick.creator?.avatar_url || myProfile?.avatarUrl;
   const displayName =
-    myProfile?.displayName ||
-    myProfile?.username ||
-    lick.creator?.username ||
     lick.creator?.display_name ||
+    lick.creator?.username ||
+    lick.creator?.displayName ||
     "Unknown User";
 
   const resolvedCurrentUserId =
@@ -206,6 +205,13 @@ const LickDetail = ({
         : `/licks/${lick.lick_id}`;
       const title = lick?.title || "My new lick";
       const textContent = `🎸 ${title}\n${shareUrl}`;
+      const MAX_POST_TEXT_LENGTH = 300;
+      if (textContent.length > MAX_POST_TEXT_LENGTH) {
+        message.warning(
+          `Nội dung không được vượt quá ${MAX_POST_TEXT_LENGTH} ký tự (hiện tại: ${textContent.length})`
+        );
+        return;
+      }
       await createPostApi({ postType: "status_update", textContent });
       message.success("Đã chia sẻ lên bảng tin của bạn");
     } catch (error) {

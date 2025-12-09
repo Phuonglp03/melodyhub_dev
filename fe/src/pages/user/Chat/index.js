@@ -15,7 +15,7 @@ import {
   VideoCameraOutlined,
   InfoCircleOutlined,
   LikeOutlined,
-  SmileOutlined
+  MenuOutlined,
 } from '@ant-design/icons';
 import useDMConversations from '../../../hooks/useDMConversations';
 import useDMConversationMessages from '../../../hooks/useDMConversationMessages';
@@ -26,20 +26,26 @@ import './Chat.css';
 const { TextArea } = Input;
 
 const ChatPage = () => {
-  const currentUser = useSelector((state) => state.auth.user);
-  const currentUserId = currentUser?.id || currentUser?._id;
+  const authUser = useSelector((state) => state.auth.user);
+  const currentUser = authUser?.user || authUser || null;
+  const currentUserId = currentUser?.id || currentUser?._id || currentUser?.userId;
+  const currentUsername = currentUser?.username;
   const [searchParams, setSearchParams] = useSearchParams();
   
   const { conversations, loading, accept, decline, ensureWith } = useDMConversations();
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [inputText, setInputText] = useState('');
-  const [filter, setFilter] = useState('all'); // 'all', 'unread', 'groups'
+  const [filter, setFilter] = useState('all'); // 'all', 'unread'
   const [peerInput, setPeerInput] = useState('');
   const [searchText, setSearchText] = useState('');
   const [requesterOverride, setRequesterOverride] = useState({}); // conversationId -> true if I just created/requested
   const [followingUsers, setFollowingUsers] = useState([]);
   const [loadingFollowing, setLoadingFollowing] = useState(false);
   const [peerInfoCache, setPeerInfoCache] = useState({}); // userId -> { displayName, username, avatarUrl }
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth <= 768 : false
+  );
   
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -50,6 +56,20 @@ const ChatPage = () => {
       initSocket(currentUserId);
     }
   }, [currentUserId]);
+
+  // Track viewport size for mobile sidebar behaviour
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = typeof window !== 'undefined' ? window.innerWidth <= 768 : false;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Fetch following users when search text changes
   useEffect(() => {
@@ -101,17 +121,25 @@ const ChatPage = () => {
   
   // Get peer info from conversation
   const getPeer = (conv) => {
-    if (!conv?.participants || !currentUserId) return null;
-    
-    const currentUserIdStr = String(
-      typeof currentUserId === 'object' ? (currentUserId._id || currentUserId.id) : currentUserId
-    );
-    
-    const peer = conv.participants.find((p) => {
-      const pid = typeof p === 'object' ? (p._id || p.id) : p;
-      return String(pid) !== currentUserIdStr;
-    });
-    
+    if (!conv?.participants || conv.participants.length === 0) return null;
+
+    // Hàm so sánh 1 participant có phải là current user không
+    const isMe = (p) => {
+      if (!p || (!currentUserId && !currentUsername)) return false;
+
+      const pid = typeof p === 'object' ? (p._id || p.id || p.userId) : p;
+      if (currentUserId && pid && String(pid) === String(currentUserId)) return true;
+
+      const pUsername = p.username || p.user?.username;
+      if (currentUsername && pUsername && pUsername === currentUsername) return true;
+
+      return false;
+    };
+
+    // Ưu tiên participant không phải mình
+    const peer = conv.participants.find((p) => !isMe(p));
+
+    // Nếu không tìm được (dữ liệu lỗi) thì trả null để UI hiện "Người dùng"
     if (!peer) return null;
     
     // If peer is just an ID string, try to get from cache
@@ -143,6 +171,44 @@ const ChatPage = () => {
     }
     
     return peer;
+  };
+
+  // Safely resolve tên hiển thị cho peer
+  const resolvePeerName = (peer) => {
+    if (!peer) return 'Người dùng';
+
+    const displayName = peer.displayName;
+    const username = peer.username;
+
+    // Nếu displayName bị trống / chỉ là "Người dùng" thì ưu tiên username
+    if ((!displayName || displayName.trim().length === 0 || displayName === 'Người dùng') && username) {
+      return username;
+    }
+
+    // Nếu có cả displayName và username khác nhau, vẫn ưu tiên displayName
+    if (displayName) {
+      return displayName;
+    }
+
+    if (username) {
+      return username;
+    }
+
+    return 'Người dùng';
+  };
+
+  // Get unread count
+  const getUnreadCount = (conv) => {
+    if (!conv?.unreadCounts || !currentUserId) return 0;
+    const uid = String(currentUserId);
+    
+    // Handle both Map and plain object
+    if (conv.unreadCounts instanceof Map) {
+      return Number(conv.unreadCounts.get(uid) || 0);
+    }
+    
+    // Handle plain object
+    return Number(conv.unreadCounts[uid] || 0);
   };
 
   // Fetch peer info if missing
@@ -235,11 +301,16 @@ const ChatPage = () => {
     
     // Status filter
     if (filter === 'unread') {
-      return getUnreadCount(c) > 0;
-    }
-    if (filter === 'groups') {
-      // For now, we'll treat all as individual chats. Can be extended later
-      return false;
+      const unreadCount = getUnreadCount(c);
+      // Debug log để kiểm tra
+      if (unreadCount > 0) {
+        console.log('[Chat] Found unread conversation:', {
+          convId: c._id,
+          unreadCount,
+          unreadCounts: c.unreadCounts,
+        });
+      }
+      return unreadCount > 0;
     }
     return true;
   });
@@ -313,18 +384,25 @@ const ChatPage = () => {
     return date.toLocaleDateString('vi-VN');
   };
 
-  // Get unread count
-  const getUnreadCount = (conv) => {
-    if (!conv?.unreadCounts || !currentUserId) return 0;
-    const uid = String(currentUserId);
-    return Number(conv.unreadCounts.get?.(uid) || conv.unreadCounts[uid] || 0);
-  };
-
   return (
     <div className="chat-page">
       <div className="chat-container">
         {/* Sidebar */}
-        <div className="chat-sidebar">
+        {isMobile && isMobileSidebarOpen && (
+          <div
+            className="chat-sidebar-backdrop"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+        <div
+          className={`chat-sidebar ${
+            isMobile
+              ? isMobileSidebarOpen
+                ? 'chat-sidebar--mobile-open'
+                : 'chat-sidebar--mobile-closed'
+              : ''
+          }`}
+        >
           <div className="chat-sidebar-header">
             <div className="chat-sidebar-title">
               <div className="chat-sidebar-title-left">
@@ -332,10 +410,6 @@ const ChatPage = () => {
                   <MessageOutlined />
                 </div>
                 <Typography.Title level={4} className="chat-sidebar-title-text">Đoạn chat</Typography.Title>
-              </div>
-              <div className="chat-sidebar-title-right">
-                <MoreOutlined className="chat-header-icon" />
-                <EditOutlined className="chat-header-icon" />
               </div>
             </div>
             
@@ -364,13 +438,6 @@ const ChatPage = () => {
               >
                 Chưa đọc
               </Button>
-              <Button 
-                className={`chat-filter-tab ${filter === 'groups' ? 'active' : ''}`}
-                onClick={() => setFilter('groups')}
-              >
-                Nhóm
-              </Button>
-              <MoreOutlined className="chat-filter-more" />
             </div>
           </div>
 
@@ -449,7 +516,13 @@ const ChatPage = () => {
             {loading ? (
               <div className="chat-loading"><Spin /></div>
             ) : filteredConvs.length === 0 && !searchText ? (
-              <Empty description="Chưa có cuộc trò chuyện" />
+              <Empty 
+                description={
+                  filter === 'unread' 
+                    ? 'Không có tin nhắn chưa đọc' 
+                    : 'Chưa có cuộc trò chuyện'
+                } 
+              />
             ) : (
               filteredConvs.map((conv) => {
                 const peer = getPeer(conv);
@@ -466,14 +539,19 @@ const ChatPage = () => {
                   });
                 }
                 
-                const peerName = peer?.displayName || peer?.username || 'Người dùng';
+                const peerName = resolvePeerName(peer);
                 const peerAvatar = peer?.avatarUrl;
 
                 return (
                   <div
-                    key={conv._id}
+                        key={conv._id}
                     className={`chat-conv-item ${isSelected ? 'selected' : ''} ${conv.status === 'pending' ? 'pending' : ''}`}
-                    onClick={() => setSelectedConvId(conv._id)}
+                    onClick={() => {
+                      setSelectedConvId(conv._id);
+                      if (isMobile) {
+                        setIsMobileSidebarOpen(false);
+                      }
+                    }}
                   >
                     <Badge count={unread > 0 ? unread : 0} offset={[-5, 5]}>
                       <Avatar 
@@ -492,6 +570,10 @@ const ChatPage = () => {
                       <div className="chat-conv-preview">
                         {conv.status === 'pending' ? (
                           <span className="pending-badge">Yêu cầu tin nhắn</span>
+                        ) : conv.status === 'declined' ? (
+                          <span className="pending-badge" style={{ color: '#f97316' }}>
+                            Yêu cầu đã bị từ chối
+                          </span>
                         ) : (
                           <span>{conv.lastMessage || 'Chưa có tin nhắn'}</span>
                         )}
@@ -511,6 +593,14 @@ const ChatPage = () => {
         <div className="chat-box">
           {!selectedConvId ? (
             <div className="chat-empty">
+              {isMobile && (
+                <Button
+                  type="text"
+                  icon={<MenuOutlined />}
+                  className="chat-empty-menu-toggle"
+                  onClick={() => setIsMobileSidebarOpen(true)}
+                />
+              )}
               <MessageOutlined style={{ fontSize: 64, color: '#ccc' }} />
               <p>Chọn một cuộc trò chuyện để bắt đầu</p>
             </div>
@@ -518,8 +608,17 @@ const ChatPage = () => {
             <>
               {/* Chat Header */}
               <div className="chat-header">
+                {isMobile && (
+                  <Button
+                    type="text"
+                    icon={<MenuOutlined />}
+                    className="chat-header-menu-toggle"
+                    onClick={() => setIsMobileSidebarOpen(true)}
+                  />
+                )}
                 {(() => {
                   const peer = getPeer(selectedConv);
+                  const peerName = resolvePeerName(peer);
                   return (
                     <>
                       <Avatar 
@@ -529,23 +628,23 @@ const ChatPage = () => {
                       />
                       <div className="chat-header-info">
                         <div className="chat-header-name">
-                          {peer?.displayName || peer?.username || 'Người dùng'}
+                          {peerName}
                         </div>
                         <div className="chat-header-status">
                           {peerTyping ? 'Đang gõ...' : formatTime(peer?.lastSeen || selectedConv?.lastMessageAt)}
                         </div>
                       </div>
                       <div className="chat-header-actions">
-                        <PhoneOutlined className="chat-header-action-icon" />
+                        {/* <PhoneOutlined className="chat-header-action-icon" />
                         <VideoCameraOutlined className="chat-header-action-icon" />
-                        <InfoCircleOutlined className="chat-header-action-icon" />
+                        <InfoCircleOutlined className="chat-header-action-icon" /> */}
                       </div>
                     </>
                   );
                 })()}
               </div>
 
-              {/* Pending banner for receiver */}
+              {/* Pending/declined banner trong khung chat */}
               {(selectedConv?.status === 'pending' && !isRequester) && (
                 <div style={{
                   padding: '12px 16px',
@@ -589,6 +688,46 @@ const ChatPage = () => {
                     >
                       Từ chối
                     </Button>
+                  </div>
+                </div>
+              )}
+              {(selectedConv?.status === 'pending' && isRequester) && (
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid #e8e8e8',
+                    background: '#e6f4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Đang chờ chấp nhận yêu cầu tin nhắn</div>
+                    <div style={{ color: '#595959', fontSize: 13 }}>
+                      Khi người kia chấp nhận, bạn sẽ có thể tiếp tục trò chuyện tại đây.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {(selectedConv?.status === 'declined' && isRequester) && (
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid #e8e8e8',
+                    background: '#fff1f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#cf1322' }}>
+                      Yêu cầu tin nhắn của bạn đã bị từ chối
+                    </div>
+                    <div style={{ color: '#8c8c8c', fontSize: 13 }}>
+                      Bạn không thể tiếp tục nhắn tin trong cuộc trò chuyện này.
+                    </div>
                   </div>
                 </div>
               )}
@@ -645,13 +784,6 @@ const ChatPage = () => {
                   disabled={selectedConv?.status === 'pending' && !isRequester}
                 />
                 <div className="chat-input-right">
-                  <Button 
-                    type="text" 
-                    icon={<SmileOutlined />} 
-                    className="chat-input-icon"
-                    title="Emoji"
-                    disabled={selectedConv?.status === 'pending' && !isRequester}
-                  />
                   <Button 
                     type="text" 
                     icon={<LikeOutlined />} 

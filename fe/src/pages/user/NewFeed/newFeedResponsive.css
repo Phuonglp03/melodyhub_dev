@@ -1,0 +1,275 @@
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.newsfeed-page {
+  --newsfeed-page-padding: 24px 24px;
+  --newsfeed-page-height: 100vh;
+  width: 100%;
+}
+
+.newsfeed-grid {
+  --newsfeed-grid-columns: minmax(0, 1.2fr) 460px;
+  --newsfeed-grid-gap: 32px;
+}
+
+.profile-feed-grid {
+  --newsfeed-grid-columns: 360px minmax(0, 1.2fr) 360px;
+  --newsfeed-grid-gap: 24px;
+}
+
+.newsfeed-main-column {
+  --newsfeed-main-pr: 8px;
+}
+
+.newsfeed-sidebar-column {
+  --newsfeed-sidebar-pl: 8px;
+}
+
+.profile-feed-left,
+.profile-feed-main,
+.profile-feed-sidebar {
+  min-width: 0;
+}
+
+.composer-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.post-actions {
+  width: 100%;
+}
+
+.profile-cover {
+  position: relative;
+  width: 100%;
+  min-height: 240px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #131313;
+}
+
+.profile-tabs {
+  display: flex;
+  gap: 24px;
+  margin: 8px 0 16px;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.profile-tab-btn {
+  position: relative;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.profile-tab-btn--active {
+  color: #ffffff;
+}
+
+.profile-tab-btn--active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 2px;
+  background: #ffffff;
+  border-radius: 999px;
+}
+
+.profile-cover__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-cover .ant-btn {
+  border-radius: 999px;
+}
+
+.newsfeed-sidebar-toggle {
+  margin-bottom: 16px;
+  border-radius: 14px !important;
+  border-color: #1f1f1f !important;
+  background: #111213 !important;
+  color: #f8fafc !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.newsfeed-sidebar-toggle .anticon {
+  font-size: 16px;
+}
+
+.newsfeed-sidebar-drawer .ant-drawer-header {
+  background: #0a0a0a;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.newsfeed-sidebar-drawer .ant-drawer-title {
+  color: #f8fafc;
+}
+
+.newsfeed-sidebar-drawer .ant-drawer-close {
+  color: #f8fafc;
+}
+
+.newsfeed-sidebar-drawer-content {
+  padding: 20px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+@media (max-width: 1200px) {
+  .newsfeed-grid,
+  .profile-feed-grid {
+    --newsfeed-grid-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .newsfeed-page {
+    --newsfeed-page-padding: 20px 16px;
+    --newsfeed-page-height: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .newsfeed-page {
+    --newsfeed-page-padding: 16px 12px;
+  }
+
+  .newsfeed-grid,
+  .profile-feed-grid {
+    --newsfeed-grid-gap: 16px;
+  }
+
+  .newsfeed-main-column {
+    --newsfeed-main-pr: 0px;
+  }
+
+  .newsfeed-sidebar-column {
+    --newsfeed-sidebar-pl: 0px;
+  }
+
+  .composer-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .composer-card .composer-input {
+    min-height: 80px;
+    font-size: 15px;
+  }
+
+  .composer-card .composer-action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .post-actions {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .profile-cover {
+    border-radius: 8px;
+    min-height: 220px;
+  }
+}
+
+/* Improved Select component styles for better visibility */
+.composer-section .ant-select-selector {
+  background-color: #1a1a1a !important;
+  border: 1px solid #3a3a3a !important;
+  border-radius: 8px !important;
+  min-height: 44px !important;
+  padding: 4px 11px !important;
+}
+
+.composer-section .ant-select-selection-overflow {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+}
+
+.composer-section .ant-select-selector:hover {
+  border-color: #4a4a4a !important;
+}
+
+.composer-section .ant-select-focused .ant-select-selector {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1) !important;
+}
+
+.composer-section .ant-select-selection-placeholder {
+  color: #9ca3af !important;
+  font-size: 14px !important;
+}
+
+.composer-section .ant-select-selection-item {
+  color: #ffffff !important;
+  background: #7c3aed !important;
+  border: 1px solid #8b5cf6 !important;
+  border-radius: 6px !important;
+  padding: 6px 14px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  margin: 2px 4px 2px 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  box-shadow: 0 2px 4px rgba(124, 58, 237, 0.2) !important;
+}
+
+.composer-section .ant-select-selection-item-content {
+  color: #ffffff !important;
+  font-weight: 500 !important;
+}
+
+.composer-section .ant-select-selection-search-input {
+  color: #f8fafc !important;
+  font-size: 14px !important;
+}
+
+.composer-section .ant-select-disabled .ant-select-selector {
+  background-color: #0f0f0f !important;
+  border-color: #1a1a1a !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+}
+
+.composer-section .ant-select-clear {
+  color: #9ca3af !important;
+  background: #2a2a2a !important;
+  border-radius: 4px !important;
+  padding: 2px !important;
+}
+
+.composer-section .ant-select-clear:hover {
+  color: #ffffff !important;
+  background: #3a3a3a !important;
+}
+
+.composer-section .ant-select-selection-item-remove {
+  color: rgba(255, 255, 255, 0.8) !important;
+  margin-left: 6px !important;
+}
+
+.composer-section .ant-select-selection-item-remove:hover {
+  color: #ffffff !important;
+}
+

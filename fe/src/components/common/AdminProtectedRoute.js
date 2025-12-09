@@ -21,14 +21,17 @@ const AdminProtectedRoute = ({ children }) => {
       </div>
     );
   }
-  // const isAdmin = user.role === "admin" || 
-  //                user.role === "ADMIN" || 
-  //                user.role === "Admin" || 
-  //                (user.role && user.role.toLowerCase() === "admin");
-
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Lấy roleId từ user (hỗ trợ cả user.user.roleId và user.roleId)
+  const userRoleId = user?.user?.roleId || user?.roleId;
+
+  // Chặn user role truy cập vào routes "/admin" - chỉ cho phép admin role
+  if (userRoleId !== 'admin') {
+    return <Navigate to="/" replace />;
   }
 
   return children;

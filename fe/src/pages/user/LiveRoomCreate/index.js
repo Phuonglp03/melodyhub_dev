@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { livestreamService } from '../../../services/user/livestreamService';
 import {
   initSocket,
+  joinRoom,
   onStreamPreviewReady,
   onStreamPrivacyUpdated,
   offSocketEvents,
@@ -17,7 +18,8 @@ import {
 } from 'antd';
 import { 
   CopyOutlined, EyeOutlined, EyeInvisibleOutlined, 
-  VideoCameraOutlined, SettingOutlined, ArrowLeftOutlined 
+  VideoCameraOutlined, SettingOutlined, ArrowLeftOutlined,
+  ReloadOutlined, WifiOutlined
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import LiveVideo from '../../../components/LiveVideo';
@@ -38,16 +40,24 @@ const LiveStreamCreate = () => {
   const [isPreviewReady, setIsPreviewReady] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // Ban status
+  const [isBanned, setIsBanned] = useState(false);
+  const [banInfo, setBanInfo] = useState(null);
+  
   // Edit Form
   const [form] = Form.useForm();
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
 
   // Keys Visibility
   const [showStreamKey, setShowStreamKey] = useState(false);
+  
+  // Check connection
+  const [isCheckingConnection, setIsCheckingConnection] = useState(false);
 
-  // Video Refs
-  const videoRef = useRef(null);
+  // Video Refs - dùng container ref để tránh conflict giữa React và Video.js
+  const videoContainerRef = useRef(null);
   const playerRef = useRef(null);
+  const retryTimeoutRef = useRef(null);
 
   // --- INIT & SOCKET ---
   useEffect(() => {
@@ -55,6 +65,18 @@ const LiveStreamCreate = () => {
 
     const fetchRoom = async () => {
       try {
+        // Kiểm tra ban status trước
+        const banStatus = await livestreamService.checkLivestreamBanStatus();
+        if (banStatus.banned) {
+          setIsBanned(true);
+          setBanInfo({
+            bannedAt: banStatus.bannedAt,
+            reason: banStatus.reason
+          });
+          setLoading(false);
+          return;
+        }
+
         const roomData = await livestreamService.getLiveStreamById(roomId);
         const currentUserId = user?.user?.id || user?.user?._id;
         
@@ -77,7 +99,20 @@ const LiveStreamCreate = () => {
         });
         
         setLoading(false);
+        
+        // Join socket room để nhận events (stream-preview-ready, etc.)
+        joinRoom(roomId);
       } catch (err) {
+        // Kiểm tra nếu lỗi là bị ban
+        if (err.response?.data?.banned) {
+          setIsBanned(true);
+          setBanInfo({
+            bannedAt: err.response.data.bannedAt,
+            reason: err.response.data.reason
+          });
+          setLoading(false);
+          return;
+        }
         setError('Không thể tải thông tin phòng.');
         setLoading(false);
       }
@@ -100,32 +135,135 @@ const LiveStreamCreate = () => {
     return () => {
       offSocketEvents();
       disconnectSocket();
-      if (playerRef.current) playerRef.current.dispose();
+      // Player được cleanup ở VIDEO PLAYER useEffect
     };
   }, [roomId, navigate, user, form]);
 
-  // --- VIDEO PLAYER ---
+  // --- VIDEO PLAYER với auto-retry khi OBS kết nối ---
+  // Dùng container ref để tránh conflict giữa React DOM và Video.js DOM
   useEffect(() => {
-    if (isPreviewReady && room?.playbackUrls?.hls && videoRef.current && !playerRef.current) {
-      const player = videojs(videoRef.current, {
-        autoplay: true,
-        muted: true,
-        controls: true,
-        fluid: true,
-        liveui: true,
-        html5: {
-          vhs: {
-            enableLowInitialPlaylist: true,
-            smoothQualityChange: true,
-            overrideNative: true,
-            liveSyncDurationCount: 3,
+    // Cleanup function - dispose player và xóa video element khỏi container
+    const cleanupPlayer = () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+      if (playerRef.current) {
+        try {
+          if (!playerRef.current.isDisposed()) {
+            playerRef.current.dispose();
           }
+        } catch (e) {
+          console.error('[Video.js] Dispose error:', e);
         }
-      });
-      player.src({ src: room.playbackUrls.hls, type: 'application/x-mpegURL' });
-      playerRef.current = player;
+        playerRef.current = null;
+      }
+      // Xóa tất cả children khỏi container (Video.js tạo ra)
+      if (videoContainerRef.current) {
+        videoContainerRef.current.innerHTML = '';
+      }
+    };
+
+    const initializePlayer = (retryCount = 0) => {
+      const maxRetries = 5;
+      const hlsUrl = room?.playbackUrls?.hls;
+
+      if (!isPreviewReady || !hlsUrl || !videoContainerRef.current) {
+        return;
+      }
+
+      // Nếu đã có player và đang hoạt động, không cần khởi tạo lại
+      if (playerRef.current && !playerRef.current.isDisposed()) {
+        return;
+      }
+
+      try {
+        console.log(`[Preview] Khởi tạo video player... (attempt ${retryCount + 1})`);
+        
+        // Xóa nội dung cũ trong container
+        videoContainerRef.current.innerHTML = '';
+        
+        // Tạo video element bằng JavaScript (không dùng JSX)
+        const videoElement = document.createElement('video');
+        videoElement.className = 'video-js vjs-big-play-centered vjs-16-9';
+        videoElement.setAttribute('playsInline', '');
+        videoElement.muted = true;
+        videoContainerRef.current.appendChild(videoElement);
+        
+        const player = videojs(videoElement, {
+          autoplay: true,
+          muted: true,
+          controls: true,
+          fluid: true,
+          liveui: true,
+          liveTracker: {
+            trackingThreshold: 15,
+            liveTolerance: 10,
+          },
+          html5: {
+            vhs: {
+              enableLowInitialPlaylist: true,
+              smoothQualityChange: true,
+              overrideNative: true,
+              liveSyncDurationCount: 3,
+              playlistRetryCount: 3,
+              playlistRetryDelay: 500,
+            }
+          }
+        });
+
+        player.src({ src: hlsUrl, type: 'application/x-mpegURL' });
+
+        player.ready(() => {
+          if (player && !player.isDisposed()) {
+            player.play().catch(() => {
+              if (player && !player.isDisposed()) {
+                player.muted(true);
+                player.play().catch(() => {});
+              }
+            });
+          }
+        });
+
+        // Xử lý lỗi - retry nếu chưa đủ số lần
+        player.on('error', () => {
+          const err = player.error();
+          console.warn('[Preview] VideoJS Error:', err);
+
+          if (retryCount < maxRetries && err && (err.code === 2 || err.code === 3 || err.code === 4)) {
+            console.log(`[Preview] Đang thử kết nối lại... (${retryCount + 1}/${maxRetries})`);
+            
+            cleanupPlayer();
+
+            retryTimeoutRef.current = setTimeout(() => {
+              initializePlayer(retryCount + 1);
+            }, 2000);
+          }
+        });
+
+        playerRef.current = player;
+        console.log('[Preview] Video player đã khởi tạo thành công');
+
+      } catch (error) {
+        console.error('[Preview] Initialization error:', error);
+        
+        if (retryCount < maxRetries) {
+          retryTimeoutRef.current = setTimeout(() => {
+            initializePlayer(retryCount + 1);
+          }, 2000);
+        }
+      }
+    };
+
+    // Khi isPreviewReady chuyển từ false -> true, đợi một chút rồi khởi tạo player
+    if (isPreviewReady && room?.playbackUrls?.hls) {
+      retryTimeoutRef.current = setTimeout(() => {
+        initializePlayer(0);
+      }, 500);
     }
-  }, [isPreviewReady, room]);
+
+    return cleanupPlayer;
+  }, [isPreviewReady, room?.playbackUrls?.hls]);
 
   // --- HANDLERS ---
   const handleUpdateInfo = async (values) => {
@@ -180,8 +318,162 @@ const LiveStreamCreate = () => {
     message.success(`Đã sao chép ${label}`);
   };
 
+  // Hàm cleanup player an toàn
+  const cleanupPlayerSafe = () => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    if (playerRef.current) {
+      try {
+        if (!playerRef.current.isDisposed()) {
+          playerRef.current.dispose();
+        }
+      } catch (e) {}
+      playerRef.current = null;
+    }
+    if (videoContainerRef.current) {
+      videoContainerRef.current.innerHTML = '';
+    }
+  };
+
+  // Kiểm tra kết nối OBS thủ công
+  const handleCheckConnection = async () => {
+    if (isCheckingConnection) return;
+    
+    setIsCheckingConnection(true);
+    try {
+      cleanupPlayerSafe();
+      
+      const roomData = await livestreamService.getLiveStreamById(roomId);
+      
+      if (roomData.status === 'preview' || roomData.status === 'live') {
+        message.success('Đã phát hiện tín hiệu từ OBS!');
+        setRoom(roomData);
+        setIsPreviewReady(true);
+      } else {
+        message.warning('Chưa phát hiện tín hiệu từ OBS. Hãy đảm bảo OBS đang stream.');
+      }
+    } catch (err) {
+      message.error('Lỗi kiểm tra kết nối');
+    } finally {
+      setIsCheckingConnection(false);
+    }
+  };
+
+  // Reload video preview - chỉ reload source, không destroy player
+  const handleReloadPreview = () => {
+    if (isCheckingConnection) return;
+    
+    const hlsUrl = room?.playbackUrls?.hls;
+    
+    if (playerRef.current && !playerRef.current.isDisposed() && hlsUrl) {
+      message.info('Đang tải lại preview...');
+      
+      try {
+        // Chỉ reload source trên player hiện tại
+        playerRef.current.src({ src: hlsUrl, type: 'application/x-mpegURL' });
+        playerRef.current.load();
+        playerRef.current.play().catch(() => {
+          if (playerRef.current && !playerRef.current.isDisposed()) {
+            playerRef.current.muted(true);
+            playerRef.current.play().catch(() => {});
+          }
+        });
+        message.success('Đã tải lại preview!');
+      } catch (error) {
+        console.error('[Preview] Reload error:', error);
+        message.error('Lỗi tải lại preview');
+      }
+    } else {
+      message.warning('Không có player để tải lại');
+    }
+  };
+
   if (loading) return <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', background:'#141414'}}><Spin size="large" /></div>;
   if (error) return <div style={{padding:'50px', textAlign:'center', color:'red'}}>{error}</div>;
+  
+  // Hiển thị nếu user bị cấm livestream
+  if (isBanned) {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        background: '#141414', 
+        color: '#fff', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        padding: '20px'
+      }}>
+        <Card 
+          style={{ 
+            maxWidth: '500px', 
+            width: '100%', 
+            background: '#1f1f1f', 
+            border: '1px solid #ff4d4f',
+            borderRadius: '12px'
+          }}
+        >
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ 
+              width: '80px', 
+              height: '80px', 
+              borderRadius: '50%', 
+              background: 'rgba(255, 77, 79, 0.1)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              margin: '0 auto 20px'
+            }}>
+              <VideoCameraOutlined style={{ fontSize: '40px', color: '#ff4d4f' }} />
+            </div>
+            
+            <Title level={3} style={{ color: '#ff4d4f', margin: '0 0 16px 0' }}>
+              Tài khoản bị cấm Livestream
+            </Title>
+            
+            <Paragraph style={{ color: '#adadb8', marginBottom: '16px' }}>
+              Bạn đã bị cấm phát livestream do vi phạm quy định cộng đồng.
+            </Paragraph>
+            
+            {banInfo?.reason && (
+              <Alert
+                message="Lý do"
+                description={banInfo.reason}
+                type="error"
+                showIcon={false}
+                style={{ 
+                  marginBottom: '16px', 
+                  background: 'rgba(255, 77, 79, 0.1)', 
+                  border: '1px solid rgba(255, 77, 79, 0.3)',
+                  textAlign: 'left'
+                }}
+              />
+            )}
+            
+            {banInfo?.bannedAt && (
+              <Text type="secondary" style={{ display: 'block', marginBottom: '20px' }}>
+                Thời gian: {new Date(banInfo.bannedAt).toLocaleString('vi-VN')}
+              </Text>
+            )}
+            
+            <Paragraph style={{ color: '#666', fontSize: '13px', marginBottom: '20px' }}>
+              Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ bộ phận hỗ trợ.
+            </Paragraph>
+            
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <Button onClick={() => navigate('/')}>
+                Về trang chủ
+              </Button>
+              <Button type="primary" onClick={() => navigate('/support')}>
+                Liên hệ hỗ trợ
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#141414', color: '#fff', padding: '20px' }}>
@@ -192,8 +484,14 @@ const LiveStreamCreate = () => {
           <Button icon={<ArrowLeftOutlined />} type="text" style={{color:'white'}} onClick={() => navigate('/')} />
           <Title level={3} style={{ color: '#fff', margin: 0 }}>Thiết lập Livestream</Title>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <Button onClick={() => setIsEditModalVisible(true)} icon={<SettingOutlined />}>
+        
+        {/* ✅ FIX: Thêm alignItems: 'center' và size="large" cho nút chỉnh sửa */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <Button 
+            size="large" 
+            onClick={() => setIsEditModalVisible(true)} 
+            icon={<SettingOutlined />}
+          >
             Chỉnh sửa thông tin
           </Button>
           <Button 
@@ -219,16 +517,53 @@ const LiveStreamCreate = () => {
             bodyStyle={{ padding: 0 }}
           >
             <div style={{ position: 'relative', paddingTop: '56.25%', background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
-              {isPreviewReady ? (
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
-                  <div data-vjs-player style={{ width: '100%', height: '100%' }}>
-                    <video ref={videoRef} className="video-js vjs-big-play-centered vjs-16-9" playsInline muted />
-                  </div>
-                </div>
-              ) : (
+              {/* Video Container - LUÔN MOUNT, chỉ show/hide bằng CSS */}
+              <div 
+                ref={videoContainerRef} 
+                data-vjs-player 
+                style={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  left: 0, 
+                  width: '100%', 
+                  height: '100%',
+                  display: isPreviewReady ? 'block' : 'none'
+                }}
+              />
+              
+              {/* Nút reload preview - hiện khi có preview */}
+              {isPreviewReady && (
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={handleReloadPreview}
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    zIndex: 10,
+                    background: 'rgba(0,0,0,0.6)',
+                    border: 'none',
+                    color: '#fff'
+                  }}
+                >
+                  Tải lại
+                </Button>
+              )}
+              
+              {/* Placeholder khi chưa có preview */}
+              {!isPreviewReady && (
                 <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#666' }}>
                   <VideoCameraOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
-                  <Text style={{ color: '#888' }}>Kết nối phần mềm phát trực tiếp (OBS) để xem trước</Text>
+                  <Text style={{ color: '#888', marginBottom: '16px' }}>Kết nối phần mềm phát trực tiếp (OBS) để xem trước</Text>
+                  <Button
+                    type="primary"
+                    icon={<WifiOutlined />}
+                    onClick={handleCheckConnection}
+                    loading={isCheckingConnection}
+                    size="large"
+                  >
+                    Kiểm tra kết nối OBS
+                  </Button>
                 </div>
               )}
             </div>

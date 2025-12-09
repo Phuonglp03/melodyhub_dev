@@ -97,7 +97,6 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.75rem 3rem;
-  backdrop-filter: blur(12px);
   background: rgba(10, 10, 10, 0.4);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -200,7 +199,6 @@
 /* Enhanced Login Card with Glassmorphism */
 .login-card {
   background: rgba(18, 18, 18, 0.75);
-  backdrop-filter: blur(40px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 28px;
   padding: 3.5rem 3rem;
@@ -370,13 +368,14 @@
   color: #8b5cf6 !important;
 }
 
-/* Enhanced Login Button */
-.login-button,
-.ant-btn-primary {
+/* Enhanced Login Button - Scoped to login-container only */
+.login-container .login-button,
+.login-container .ant-btn-primary {
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
   border: none !important;
   border-radius: 14px !important;
   height: 54px !important;
+  width: 100% !important;
   font-size: 1.05rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.5px !important;
@@ -385,10 +384,11 @@
   box-shadow: 0 8px 24px rgba(139, 92, 246, 0.45) !important;
   position: relative;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
-.login-button::before,
-.ant-btn-primary::before {
+.login-container .login-button::before,
+.login-container .ant-btn-primary::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -401,21 +401,21 @@
   transition: width 0.7s, height 0.7s;
 }
 
-.login-button:hover::before,
-.ant-btn-primary:hover::before {
+.login-container .login-button:hover::before,
+.login-container .ant-btn-primary:hover::before {
   width: 350px;
   height: 350px;
 }
 
-.login-button:hover,
-.ant-btn-primary:hover {
+.login-container .login-button:hover,
+.login-container .ant-btn-primary:hover {
   transform: translateY(-3px) !important;
   box-shadow: 0 12px 36px rgba(139, 92, 246, 0.65) !important;
   background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
 }
 
-.login-button:active,
-.ant-btn-primary:active {
+.login-container .login-button:active,
+.login-container .ant-btn-primary:active {
   transform: translateY(-1px) !important;
 }
 
@@ -438,6 +438,7 @@
   margin: 24px 0;
   position: relative;
   z-index: 1;
+  width: 100%;
 }
 
 .social-login .google-signin-wrapper {
@@ -445,6 +446,7 @@
   padding: 0;
   background: transparent;
   border-radius: 0;
+  width: 100% !important;
 }
 
 .social-login .google-signin-wrapper:hover {
@@ -489,23 +491,31 @@
 
 /* Google Sign-In Wrapper Enhancements */
 .google-signin-wrapper {
-  width: 100%;
+  width: 100% !important;
   display: flex;
   justify-content: center;
   align-items: center;
   position: relative;
+  box-sizing: border-box;
+}
+
+.google-signin-wrapper > div {
+  width: 100% !important;
+  box-sizing: border-box;
 }
 
 #googleSignInButton {
   width: 100% !important;
   border-radius: 14px !important;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 #googleSignInButton > div {
   width: 100% !important;
   border-radius: 14px !important;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* Style the actual Google button iframe */
@@ -513,6 +523,7 @@
   width: 100% !important;
   height: 54px !important;
   border-radius: 14px !important;
+  box-sizing: border-box;
 }
 
 /* Override Google's default button styles */
@@ -653,7 +664,6 @@
   display: inline-flex !important;
   align-items: center !important;
   background: rgba(18, 18, 18, 0.95) !important;
-  backdrop-filter: blur(24px) saturate(150%) !important;
   border: 1px solid rgba(139, 92, 246, 0.5) !important;
   border-radius: 14px !important;
   padding: 16px 28px !important;

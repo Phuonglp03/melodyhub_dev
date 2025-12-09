@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { loginWithGoogle } from '../services/authService';
+import { useDispatch } from 'react-redux';
+import { googleLogin } from '../redux/authSlice';
 import './GoogleSignIn.css';
 
 const GoogleSignIn = ({ buttonText = "Sign in with Google", onSuccess, onError }) => {
+  const dispatch = useDispatch();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const buttonRef = useRef(null);
@@ -103,12 +105,15 @@ const GoogleSignIn = ({ buttonText = "Sign in with Google", onSuccess, onError }
       });
 
       console.log('🎨 Rendering Google button...');
+      // Get the parent container width to ensure button matches login button width
+      const parentWidth = buttonDiv.parentElement?.offsetWidth || buttonDiv.offsetWidth || 400;
+      
       window.google.accounts.id.renderButton(
         buttonDiv,
         {
           theme: 'outline',
           size: 'large',
-          width: buttonDiv.offsetWidth || 400,
+          width: parentWidth,
           text: 'continue_with',
           shape: 'rectangular',
           logo_alignment: 'left',
@@ -139,20 +144,36 @@ const GoogleSignIn = ({ buttonText = "Sign in with Google", onSuccess, onError }
     }
 
     console.log('🔐 Credential received, logging in...');
+    console.log('🔑 Token preview:', response.credential.substring(0, 50) + '...');
 
     try {
-      const result = await loginWithGoogle(response.credential);
-      console.log('📨 Login result:', result);
+      // Dispatch Redux action for Google login
+      const resultAction = await dispatch(googleLogin(response.credential));
+      console.log('📨 Login result action:', resultAction);
       
-      if (result.success) {
-        console.log('✅ Login successful');
+      if (googleLogin.fulfilled.match(resultAction)) {
+        const result = resultAction.payload;
+        console.log('✅ Login successful, payload:', result);
+        
+        // Check if account is locked
+        if (result?.isAccountLocked) {
+          const errorMessage = result.message || 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.';
+          console.error('❌ Account is locked:', errorMessage);
+          if (onError) {
+            onError(errorMessage);
+          }
+          return;
+        }
+        
         if (onSuccess) {
-          onSuccess(result.user);
+          // Pass user data to parent component
+          onSuccess(result?.data?.user || result?.user);
         }
       } else {
-        console.error('❌ Login failed:', result.message);
+        const errorMessage = resultAction.payload || 'Login failed. Please try again.';
+        console.error('❌ Login failed:', errorMessage);
         if (onError) {
-          onError(result.message || 'Login failed. Please try again.');
+          onError(errorMessage);
         }
       }
     } catch (error) {

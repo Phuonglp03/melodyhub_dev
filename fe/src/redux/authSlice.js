@@ -56,12 +56,14 @@ export const login = createAsyncThunk(
       
       return thunkAPI.rejectWithValue(response.message || 'Đăng nhập thất bại');
     } catch (error) {
+      console.log('[authSlice] Login error caught:', error);
       const message =
         (error.response &&
           error.response.data &&
           error.response.data.message) ||
         error.message ||
         error.toString();
+      console.log('[authSlice] Extracted error message:', message);
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -72,7 +74,14 @@ export const googleLogin = createAsyncThunk(
   'auth/googleLogin',
   async (token, thunkAPI) => {
     try {
-      return await loginWithGoogleService(token);
+      const response = await loginWithGoogleService(token);
+      
+      // If login is successful
+      if (response.success && response.data) {
+        return response;
+      }
+      
+      return thunkAPI.rejectWithValue(response.message || 'Đăng nhập Google thất bại');
     } catch (error) {
       const message =
         (error.response &&
@@ -124,7 +133,9 @@ const authSlice = createSlice({
     },
     updateTokens: (state, action) => {
       // Update tokens after refresh
-      if (state.user && action.payload) {
+      if (action.payload) {
+        if (state.user) {
+          // Cập nhật user hiện tại với token mới
         state.user = {
           ...state.user,
           token: action.payload.token,
@@ -134,6 +145,14 @@ const authSlice = createSlice({
             ...action.payload.user
           }
         };
+        } else {
+          // Nếu không có user (edge case), tạo mới từ payload
+          state.user = {
+            token: action.payload.token,
+            refreshToken: action.payload.refreshToken,
+            user: action.payload.user
+          };
+        }
         console.log('[authSlice] Tokens updated:', { 
           tokenPreview: action.payload.token?.substring(0, 20) + '...',
           hasRefreshToken: !!action.payload.refreshToken 
@@ -223,16 +242,32 @@ const authSlice = createSlice({
       })
       .addCase(googleLogin.pending, (state) => {
         state.isLoading = true;
+        state.isError = false;
+        state.message = '';
       })
       .addCase(googleLogin.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        state.user = action.payload.user;
+        state.isError = false;
+        state.message = 'Đăng nhập Google thành công';
+        
+        // ✅ action.payload.data contains { token, refreshToken, user }
+        if (action.payload?.data) {
+          state.user = action.payload.data;
+          console.log('[authSlice] Google login successful, user data saved:', {
+            hasToken: !!action.payload.data.token,
+            hasRefreshToken: !!action.payload.data.refreshToken,
+            userId: action.payload.data.user?.id,
+            tokenPreview: action.payload.data.token?.substring(0, 30) + '...'
+          });
+        } else {
+          console.error('[authSlice] Google login payload missing data:', action.payload);
+        }
       })
       .addCase(googleLogin.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
-        state.message = action.payload;
+        state.message = action.payload || 'Đăng nhập Google thất bại';
         state.user = null;
       })
       .addCase(logout.fulfilled, (state) => {

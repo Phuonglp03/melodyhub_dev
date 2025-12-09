@@ -26,8 +26,16 @@ const ProtectedRoute = ({ children, requiredRole }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Lấy roleId từ user (hỗ trợ cả user.user.roleId và user.roleId)
+  const userRoleId = user?.user?.roleId || user?.roleId;
+
+  // Chặn admin truy cập vào routes "/" - chỉ cho phép user role
+  if (userRoleId === 'admin') {
+    return <Navigate to="/admin/dashboard" state={{ from: location }} replace />;
+  }
+
   // Nếu có yêu cầu role và user không có quyền
-  if (requiredRole && user.roleId !== requiredRole) {
+  if (requiredRole && userRoleId !== requiredRole) {
     return <Navigate to="/unauthorized" state={{ from: location }} replace />;
   }
 

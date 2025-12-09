@@ -17,7 +17,57 @@
 }
 
 .dark-select-dropdown .ant-select-item-option-selected {
-  background: #2f2f2f !important;
+  background: #7c3aed !important;
+  color: #fff !important;
+  font-weight: 500 !important;
+}
+
+.dark-select-dropdown .ant-select-item-option-selected:hover {
+  background: #8b5cf6 !important;
+}
+
+/* Project dropdown: clearer text color */
+.project-select-dropdown .ant-select-item,
+.project-select-dropdown .ant-select-item-option-content {
+  color: #f8fafc !important; /* near-white for better readability */
+}
+
+/* Force dark background for project dropdown */
+.project-select-dropdown .ant-select-dropdown {
+  background: #0f0f10 !important;
+  border-color: #303030 !important;
+}
+
+.project-select-dropdown .ant-select-item {
+  background: #0f0f10 !important;
+}
+
+.project-select-dropdown .ant-select-item-option-active {
+  background: #1f1f1f !important;
   color: #fff !important;
 }
 
+.project-select-dropdown .ant-select-item-option-selected {
+  background: #7c3aed !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111827; /* gray-900 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #374151; /* gray-700 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563; /* gray-600 */
+}

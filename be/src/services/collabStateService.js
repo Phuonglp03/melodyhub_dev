@@ -76,7 +76,7 @@ export const getCollabState = async (projectId) => {
   if (!projectId) throw new Error("projectId is required");
   
   try {
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -109,28 +109,28 @@ export const getCollabState = async (projectId) => {
     }
     
     const record = await client.hGetAll(COLLAB_KEY(projectId));
-    if (record && Object.keys(record).length) {
-      return parseStateRecord(record);
-    }
+  if (record && Object.keys(record).length) {
+    return parseStateRecord(record);
+  }
 
-    // fallback to Mongo snapshot
+  // fallback to Mongo snapshot
     try {
       const { default: CollabSnapshot } = await import("../models/CollabSnapshot.js");
-      const snapshotDoc = await CollabSnapshot.findOne({ projectId })
-        .select("version snapshot updatedAt")
-        .lean();
-      if (!snapshotDoc) {
-        return { version: 0, updatedAt: Date.now(), snapshot: null };
-      }
+  const snapshotDoc = await CollabSnapshot.findOne({ projectId })
+    .select("version snapshot updatedAt")
+    .lean();
+  if (!snapshotDoc) {
+    return { version: 0, updatedAt: Date.now(), snapshot: null };
+  }
 
-      const fallbackState = {
-        version: snapshotDoc.version || 0,
-        updatedAt: snapshotDoc.updatedAt?.getTime() || Date.now(),
-        snapshot: snapshotDoc.snapshot || null,
-      };
+  const fallbackState = {
+    version: snapshotDoc.version || 0,
+    updatedAt: snapshotDoc.updatedAt?.getTime() || Date.now(),
+    snapshot: snapshotDoc.snapshot || null,
+  };
 
-      await writeStateRecord(client, projectId, fallbackState);
-      return fallbackState;
+  await writeStateRecord(client, projectId, fallbackState);
+  return fallbackState;
     } catch (mongoErr) {
       console.error("[CollabState] Failed to load from MongoDB:", mongoErr.message);
       return { version: 0, updatedAt: Date.now(), snapshot: null };
@@ -146,7 +146,7 @@ export const getMissingOps = async (projectId, fromVersion = 0) => {
   if (!projectId) throw new Error("projectId is required");
   
   try {
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -154,19 +154,19 @@ export const getMissingOps = async (projectId, fromVersion = 0) => {
       return ops.filter((op) => op.version > fromVersion);
     }
     
-    const rawOps = await client.lRange(OPS_KEY(projectId), 0, MAX_OPS);
-    const ops = rawOps
-      .map((entry) => {
-        try {
-          return JSON.parse(entry);
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.version - b.version);
+  const rawOps = await client.lRange(OPS_KEY(projectId), 0, MAX_OPS);
+  const ops = rawOps
+    .map((entry) => {
+      try {
+        return JSON.parse(entry);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.version - b.version);
 
-    return ops.filter((op) => op.version > fromVersion);
+  return ops.filter((op) => op.version > fromVersion);
   } catch (err) {
     console.error("[CollabState] getMissingOps error:", err.message);
     return [];
@@ -180,27 +180,27 @@ export const applyOperation = async (projectId, op, options = {}) => {
   }
 
   try {
-    const client = await getRedisClient();
-    const currentState = await getCollabState(projectId);
-    const nextVersion = currentState.version + 1;
+  const client = await getRedisClient();
+  const currentState = await getCollabState(projectId);
+  const nextVersion = currentState.version + 1;
 
-    const opEntry = {
-      version: nextVersion,
-      type: op.type,
-      payload: op.payload || op.data || {},
-      senderId: options.senderId || null,
-      timestamp: Date.now(),
-      collabOpId: options.collabOpId || op.collabOpId || null,
-    };
+  const opEntry = {
+    version: nextVersion,
+    type: op.type,
+    payload: op.payload || op.data || {},
+    senderId: options.senderId || null,
+    timestamp: Date.now(),
+    collabOpId: options.collabOpId || op.collabOpId || null,
+  };
 
-    const snapshot =
-      options.snapshot !== undefined ? options.snapshot : currentState.snapshot;
+  const snapshot =
+    options.snapshot !== undefined ? options.snapshot : currentState.snapshot;
 
-    const nextState = {
-      version: nextVersion,
-      updatedAt: opEntry.timestamp,
-      snapshot,
-    };
+  const nextState = {
+    version: nextVersion,
+    updatedAt: opEntry.timestamp,
+    snapshot,
+  };
 
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -226,35 +226,35 @@ export const applyOperation = async (projectId, op, options = {}) => {
       return { version: nextVersion, op: opEntry };
     }
 
-    await writeStateRecord(client, projectId, nextState);
-    const pushStarted = Date.now();
-    await client.lPush(OPS_KEY(projectId), JSON.stringify(opEntry));
-    recordCollabMetric("redis_op_push", {
-      projectId,
-      ms: Date.now() - pushStarted,
-    });
-    const trimStarted = Date.now();
-    await client.lTrim(OPS_KEY(projectId), 0, MAX_OPS - 1);
-    recordCollabMetric("redis_op_trim", {
-      projectId,
-      ms: Date.now() - trimStarted,
-      maxOps: MAX_OPS,
-    });
+  await writeStateRecord(client, projectId, nextState);
+  const pushStarted = Date.now();
+  await client.lPush(OPS_KEY(projectId), JSON.stringify(opEntry));
+  recordCollabMetric("redis_op_push", {
+    projectId,
+    ms: Date.now() - pushStarted,
+  });
+  const trimStarted = Date.now();
+  await client.lTrim(OPS_KEY(projectId), 0, MAX_OPS - 1);
+  recordCollabMetric("redis_op_trim", {
+    projectId,
+    ms: Date.now() - trimStarted,
+    maxOps: MAX_OPS,
+  });
 
-    if (snapshot) {
-      scheduleSnapshotPersist(projectId, nextState);
-    }
+  if (snapshot) {
+    scheduleSnapshotPersist(projectId, nextState);
+  }
 
-    recordCollabMetric("op_applied", {
-      projectId,
-      type: op.type,
-      version: nextVersion,
-    });
+  recordCollabMetric("op_applied", {
+    projectId,
+    type: op.type,
+    version: nextVersion,
+  });
 
-    return {
-      version: nextVersion,
-      op: opEntry,
-    };
+  return {
+    version: nextVersion,
+    op: opEntry,
+  };
   } catch (err) {
     console.error("[CollabState] applyOperation error:", err.message);
     throw err;
@@ -265,13 +265,13 @@ export const setSnapshot = async (projectId, snapshot, version = null) => {
   if (!projectId) throw new Error("projectId is required");
   
   try {
-    const client = await getRedisClient();
-    const currentState = await getCollabState(projectId);
-    const nextState = {
-      version: typeof version === "number" ? version : currentState.version,
-      updatedAt: Date.now(),
-      snapshot,
-    };
+  const client = await getRedisClient();
+  const currentState = await getCollabState(projectId);
+  const nextState = {
+    version: typeof version === "number" ? version : currentState.version,
+    updatedAt: Date.now(),
+    snapshot,
+  };
     
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -280,9 +280,9 @@ export const setSnapshot = async (projectId, snapshot, version = null) => {
       return nextState;
     }
     
-    await writeStateRecord(client, projectId, nextState);
-    scheduleSnapshotPersist(projectId, nextState);
-    return nextState;
+  await writeStateRecord(client, projectId, nextState);
+  scheduleSnapshotPersist(projectId, nextState);
+  return nextState;
   } catch (err) {
     console.error("[CollabState] setSnapshot error:", err.message);
     throw err;
@@ -298,11 +298,11 @@ export const clearCollabState = async (projectId) => {
     inMemoryOps.delete(projectId);
     pendingSnapshotTimers.delete(projectId);
     
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     if (!client) return;
     
     await client.del(COLLAB_KEY(projectId));
-    await client.del(OPS_KEY(projectId));
+  await client.del(OPS_KEY(projectId));
   } catch (err) {
     console.error("[CollabState] clearCollabState error:", err.message);
   }

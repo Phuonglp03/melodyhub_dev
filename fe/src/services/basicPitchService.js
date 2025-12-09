@@ -749,9 +749,11 @@ export const generateTabWithML = async (audioFile, options = {}) => {
   }
 };
 
-export default {
+const basicPitchService = {
   generateTabWithML,
   isBasicPitchAvailable,
   getBasicPitchStatus,
   preloadBasicPitch,
 };
+
+export default basicPitchService;

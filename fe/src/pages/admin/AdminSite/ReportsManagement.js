@@ -3,6 +3,7 @@ import { Search, AlertCircle, ShieldAlert, UserX, Loader2, Eye, X } from 'lucide
 import { getAllReports, adminRestorePost, adminDeletePost } from '../../../services/user/reportService';
 import { message, Modal } from 'antd';
 import PostLickEmbed from '../../../components/PostLickEmbed';
+import { onNewReport, offNewReport } from '../../../services/user/socketService';
 
 const ReportsManagement = () => {
   const [activeTab, setActiveTab] = useState('pending');
@@ -38,6 +39,58 @@ const ReportsManagement = () => {
     return typeMap[reason] || 'Other';
   };
 
+  // Helper function to map report data to frontend format
+  const mapReportData = (report, index = 0) => {
+    const reporterDisplayName = report.reporterId?.displayName || report.reporterId?.username || 'Unknown';
+    const reportData = {
+      id: report._id || index + 1,
+      _id: report._id,
+      reportedBy: reporterDisplayName,
+      reporterUsername: report.reporterId?.username || 'Unknown',
+      reporterId: report.reporterId?._id,
+      violationType: getReasonDisplay(report.reason),
+      reason: report.reason,
+      reportedContent: '',
+      uploader: '',
+      uploaderDisplayName: '',
+      host: '',
+      detail: report.description || '',
+      accountStatus: 'Active',
+      isPending: report.status === 'pending',
+      status: report.status,
+      createdAt: report.createdAt,
+      post: report.post ? {
+        ...report.post,
+        attachedLicks: report.post.attachedLicks || [],
+        media: report.post.media || [],
+        linkPreview: report.post.linkPreview || null
+      } : null,
+      targetContentType: report.targetContentType,
+      targetContentId: report.targetContentId,
+      fullReport: report // Store full report data for detail view
+    };
+
+    // Format reported content based on content type
+    if (report.targetContentType === 'post' && report.post) {
+      const postText = report.post.textContent 
+        ? (report.post.textContent.length > 50 
+            ? report.post.textContent.substring(0, 50) + '...' 
+            : report.post.textContent)
+        : 'Post không có nội dung';
+      reportData.reportedContent = `Post: "${postText}"`;
+      reportData.uploader = report.post.author?.username || 'Unknown';
+      reportData.uploaderDisplayName = report.post.author?.displayName || report.post.author?.username || 'Unknown';
+    } else if (report.targetContentType === 'lick') {
+      reportData.reportedContent = `Lick: "${report.targetContentId}"`;
+    } else if (report.targetContentType === 'user') {
+      reportData.reportedContent = `User Profile: "${report.targetContentId}"`;
+    } else {
+      reportData.reportedContent = `${report.targetContentType}: ${report.targetContentId}`;
+    }
+
+    return reportData;
+  };
+
   // Fetch reports from backend
   useEffect(() => {
     const fetchReports = async () => {
@@ -46,56 +99,7 @@ const ReportsManagement = () => {
         const response = await getAllReports();
         if (response?.success && response?.data) {
           // Map backend data to frontend format
-          const mappedReports = response.data.map((report, index) => {
-            const reporterDisplayName = report.reporterId?.displayName || report.reporterId?.username || 'Unknown';
-            const reportData = {
-              id: report._id || index + 1,
-              _id: report._id,
-              reportedBy: reporterDisplayName,
-              reporterUsername: report.reporterId?.username || 'Unknown',
-              reporterId: report.reporterId?._id,
-              violationType: getReasonDisplay(report.reason),
-              reason: report.reason,
-              reportedContent: '',
-              uploader: '',
-              uploaderDisplayName: '',
-              host: '',
-              detail: report.description || '',
-              accountStatus: 'Active',
-              isPending: report.status === 'pending',
-              status: report.status,
-              createdAt: report.createdAt,
-              post: report.post ? {
-                ...report.post,
-                attachedLicks: report.post.attachedLicks || [],
-                media: report.post.media || [],
-                linkPreview: report.post.linkPreview || null
-              } : null,
-              targetContentType: report.targetContentType,
-              targetContentId: report.targetContentId,
-              fullReport: report // Store full report data for detail view
-            };
-
-            // Format reported content based on content type
-            if (report.targetContentType === 'post' && report.post) {
-              const postText = report.post.textContent 
-                ? (report.post.textContent.length > 50 
-                    ? report.post.textContent.substring(0, 50) + '...' 
-                    : report.post.textContent)
-                : 'Post không có nội dung';
-              reportData.reportedContent = `Post: "${postText}"`;
-              reportData.uploader = report.post.author?.username || 'Unknown';
-              reportData.uploaderDisplayName = report.post.author?.displayName || report.post.author?.username || 'Unknown';
-            } else if (report.targetContentType === 'lick') {
-              reportData.reportedContent = `Lick: "${report.targetContentId}"`;
-            } else if (report.targetContentType === 'user') {
-              reportData.reportedContent = `User Profile: "${report.targetContentId}"`;
-            } else {
-              reportData.reportedContent = `${report.targetContentType}: ${report.targetContentId}`;
-            }
-
-            return reportData;
-          });
+          const mappedReports = response.data.map((report, index) => mapReportData(report, index));
           setReports(mappedReports);
         }
       } catch (error) {
@@ -107,6 +111,55 @@ const ReportsManagement = () => {
     };
 
     fetchReports();
+  }, []);
+
+  // Listen for new reports via socket (realtime)
+  useEffect(() => {
+    const handleNewReport = (payload) => {
+      console.log('[ReportsManagement] Received new report via socket:', payload);
+      const newReport = payload.report;
+      
+      if (!newReport) {
+        console.warn('[ReportsManagement] No report data in payload');
+        return;
+      }
+
+      // Check if report already exists (avoid duplicates)
+      setReports(prevReports => {
+        const exists = prevReports.some(r => r._id === newReport._id);
+        if (exists) {
+          console.log('[ReportsManagement] Report already exists, skipping');
+          return prevReports;
+        }
+
+        // Map the new report to frontend format
+        const mappedReport = mapReportData(newReport);
+        
+        // Add to the beginning of the list (newest first)
+        const updatedReports = [mappedReport, ...prevReports];
+        
+        // Show notification
+        message.success({
+          content: `Có báo cáo mới từ ${mappedReport.reportedBy}`,
+          duration: 3,
+        });
+
+        // Auto-switch to pending tab if not already there
+        if (mappedReport.status === 'pending') {
+          setActiveTab('pending');
+        }
+
+        return updatedReports;
+      });
+    };
+
+    // Setup socket listener
+    onNewReport(handleNewReport);
+
+    // Cleanup on unmount
+    return () => {
+      offNewReport(handleNewReport);
+    };
   }, []);
 
   const handleAction = async (id, action) => {
@@ -151,55 +204,7 @@ const ReportsManagement = () => {
         // Refresh reports from server to get updated status
         const refreshResponse = await getAllReports();
         if (refreshResponse?.success && refreshResponse?.data) {
-          const mappedReports = refreshResponse.data.map((r, index) => {
-            const reporterDisplayName = r.reporterId?.displayName || r.reporterId?.username || 'Unknown';
-            const reportData = {
-              id: r._id || index + 1,
-              _id: r._id,
-              reportedBy: reporterDisplayName,
-              reporterUsername: r.reporterId?.username || 'Unknown',
-              reporterId: r.reporterId?._id,
-              violationType: getReasonDisplay(r.reason),
-              reason: r.reason,
-              reportedContent: '',
-              uploader: '',
-              uploaderDisplayName: '',
-              host: '',
-              detail: r.description || '',
-              accountStatus: 'Active',
-              isPending: r.status === 'pending',
-              status: r.status,
-              createdAt: r.createdAt,
-              post: r.post ? {
-                ...r.post,
-                attachedLicks: r.post.attachedLicks || [],
-                media: r.post.media || [],
-                linkPreview: r.post.linkPreview || null
-              } : null,
-              targetContentType: r.targetContentType,
-              targetContentId: r.targetContentId,
-              fullReport: r
-            };
-
-            if (r.targetContentType === 'post' && r.post) {
-              const postText = r.post.textContent 
-                ? (r.post.textContent.length > 50 
-                    ? r.post.textContent.substring(0, 50) + '...' 
-                    : r.post.textContent)
-                : 'Post không có nội dung';
-              reportData.reportedContent = `Post: "${postText}"`;
-              reportData.uploader = r.post.author?.username || 'Unknown';
-              reportData.uploaderDisplayName = r.post.author?.displayName || r.post.author?.username || 'Unknown';
-            } else if (r.targetContentType === 'lick') {
-              reportData.reportedContent = `Lick: "${r.targetContentId}"`;
-            } else if (r.targetContentType === 'user') {
-              reportData.reportedContent = `User Profile: "${r.targetContentId}"`;
-            } else {
-              reportData.reportedContent = `${r.targetContentType}: ${r.targetContentId}`;
-            }
-
-            return reportData;
-          });
+          const mappedReports = refreshResponse.data.map((r, index) => mapReportData(r, index));
           setReports(mappedReports);
           // Switch to resolved tab to show the resolved reports
           setActiveTab('resolved');
@@ -226,55 +231,7 @@ const ReportsManagement = () => {
       // Refresh reports from server
       const response = await getAllReports();
       if (response?.success && response?.data) {
-        const mappedReports = response.data.map((r, index) => {
-          const reporterDisplayName = r.reporterId?.displayName || r.reporterId?.username || 'Unknown';
-          const reportData = {
-            id: r._id || index + 1,
-            _id: r._id,
-            reportedBy: reporterDisplayName,
-            reporterUsername: r.reporterId?.username || 'Unknown',
-            reporterId: r.reporterId?._id,
-            violationType: getReasonDisplay(r.reason),
-            reason: r.reason,
-            reportedContent: '',
-            uploader: '',
-            uploaderDisplayName: '',
-            host: '',
-            detail: r.description || '',
-            accountStatus: 'Active',
-            isPending: r.status === 'pending',
-            status: r.status,
-            createdAt: r.createdAt,
-            post: r.post ? {
-              ...r.post,
-              attachedLicks: r.post.attachedLicks || [],
-              media: r.post.media || [],
-              linkPreview: r.post.linkPreview || null
-            } : null,
-            targetContentType: r.targetContentType,
-            targetContentId: r.targetContentId,
-            fullReport: r
-          };
-
-          if (r.targetContentType === 'post' && r.post) {
-            const postText = r.post.textContent 
-              ? (r.post.textContent.length > 50 
-                  ? r.post.textContent.substring(0, 50) + '...' 
-                  : r.post.textContent)
-              : 'Post không có nội dung';
-            reportData.reportedContent = `Post: "${postText}"`;
-            reportData.uploader = r.post.author?.username || 'Unknown';
-            reportData.uploaderDisplayName = r.post.author?.displayName || r.post.author?.username || 'Unknown';
-          } else if (r.targetContentType === 'lick') {
-            reportData.reportedContent = `Lick: "${r.targetContentId}"`;
-          } else if (r.targetContentType === 'user') {
-            reportData.reportedContent = `User Profile: "${r.targetContentId}"`;
-          } else {
-            reportData.reportedContent = `${r.targetContentType}: ${r.targetContentId}`;
-          }
-
-          return reportData;
-        });
+        const mappedReports = response.data.map((r, index) => mapReportData(r, index));
         setReports(mappedReports);
         // Switch to resolved tab to show the resolved reports
         setActiveTab('resolved');

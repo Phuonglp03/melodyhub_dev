@@ -34,12 +34,12 @@ export const addCollaboratorPresence = async (
   if (!projectId || !userId) return;
   
   const defaultRecord = {
-    userId,
+      userId,
     user: payload,
     sockets: [socketId],
-    cursor: null,
-    lastHeartbeat: Date.now(),
-  };
+      cursor: null,
+      lastHeartbeat: Date.now(),
+    };
   
   try {
     const client = await getRedisClient();
@@ -96,7 +96,7 @@ export const removeCollaboratorPresence = async (
   if (!projectId || !userId) return;
   
   try {
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -117,32 +117,32 @@ export const removeCollaboratorPresence = async (
       return record;
     }
     
-    const key = PRESENCE_KEY(projectId);
-    const existingRaw = await client.hGet(key, userId);
-    if (!existingRaw) return null;
-    const existing = deserialize(existingRaw);
-    if (!existing) {
-      await client.hDel(key, userId);
-      return null;
-    }
+  const key = PRESENCE_KEY(projectId);
+  const existingRaw = await client.hGet(key, userId);
+  if (!existingRaw) return null;
+  const existing = deserialize(existingRaw);
+  if (!existing) {
+    await client.hDel(key, userId);
+    return null;
+  }
 
-    const sockets = new Set(existing.sockets || []);
-    if (socketId) {
-      sockets.delete(socketId);
-    }
+  const sockets = new Set(existing.sockets || []);
+  if (socketId) {
+    sockets.delete(socketId);
+  }
 
-    if (!sockets.size) {
-      await client.hDel(key, userId);
-      return null;
-    }
+  if (!sockets.size) {
+    await client.hDel(key, userId);
+    return null;
+  }
 
-    const record = {
-      ...existing,
-      sockets: Array.from(sockets),
-      lastHeartbeat: Date.now(),
-    };
-    await client.hSet(key, userId, serialize(record));
-    return record;
+  const record = {
+    ...existing,
+    sockets: Array.from(sockets),
+    lastHeartbeat: Date.now(),
+  };
+  await client.hSet(key, userId, serialize(record));
+  return record;
   } catch (err) {
     console.error(
       `[CollabPresence] removeCollaboratorPresence error for project ${projectId}, user ${userId}:`,
@@ -210,7 +210,7 @@ export const updateCursorPosition = async (projectId, userId, cursor) => {
   if (!projectId || !userId) return;
   
   try {
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -222,18 +222,18 @@ export const updateCursorPosition = async (projectId, userId, cursor) => {
       return record;
     }
     
-    const key = PRESENCE_KEY(projectId);
-    const existingRaw = await client.hGet(key, userId);
-    if (!existingRaw) return null;
-    const existing = deserialize(existingRaw);
-    if (!existing) return null;
-    const record = {
-      ...existing,
-      cursor,
-      lastHeartbeat: Date.now(),
-    };
-    await client.hSet(key, userId, serialize(record));
-    return record;
+  const key = PRESENCE_KEY(projectId);
+  const existingRaw = await client.hGet(key, userId);
+  if (!existingRaw) return null;
+  const existing = deserialize(existingRaw);
+  if (!existing) return null;
+  const record = {
+    ...existing,
+    cursor,
+    lastHeartbeat: Date.now(),
+  };
+  await client.hSet(key, userId, serialize(record));
+  return record;
   } catch (err) {
     console.error(
       `[CollabPresence] updateCursorPosition error for project ${projectId}, user ${userId}:`,
@@ -247,7 +247,7 @@ export const heartbeatPresence = async (projectId, userId) => {
   if (!projectId || !userId) return;
   
   try {
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     
     // Fallback to in-memory if Redis not available
     if (!client) {
@@ -259,18 +259,18 @@ export const heartbeatPresence = async (projectId, userId) => {
       return record;
     }
     
-    const key = PRESENCE_KEY(projectId);
-    const existingRaw = await client.hGet(key, userId);
-    if (!existingRaw) return null;
-    const existing = deserialize(existingRaw);
-    if (!existing) return null;
-    const record = {
-      ...existing,
-      lastHeartbeat: Date.now(),
-    };
-    await client.hSet(key, userId, serialize(record));
-    await client.expire(key, PRESENCE_TTL_SEC);
-    return record;
+  const key = PRESENCE_KEY(projectId);
+  const existingRaw = await client.hGet(key, userId);
+  if (!existingRaw) return null;
+  const existing = deserialize(existingRaw);
+  if (!existing) return null;
+  const record = {
+    ...existing,
+    lastHeartbeat: Date.now(),
+  };
+  await client.hSet(key, userId, serialize(record));
+  await client.expire(key, PRESENCE_TTL_SEC);
+  return record;
   } catch (err) {
     console.error(
       `[CollabPresence] heartbeatPresence error for project ${projectId}, user ${userId}:`,
@@ -282,10 +282,10 @@ export const heartbeatPresence = async (projectId, userId) => {
 
 export const cleanupStalePresence = async () => {
   try {
-    const client = await getRedisClient();
+  const client = await getRedisClient();
     
     // Cleanup in-memory fallback
-    const now = Date.now();
+  const now = Date.now();
     for (const [key, projectPresence] of inMemoryPresence.entries()) {
       for (const [userId, entry] of projectPresence.entries()) {
         if (now - (entry.lastHeartbeat || 0) > PRESENCE_TTL_SEC * 1000) {
@@ -302,36 +302,36 @@ export const cleanupStalePresence = async () => {
       return;
     }
     
-    const pattern = "collab:project:*:presence";
-    let cursor = 0;
-    do {
-      const [nextCursor, keys] = await client.scan(cursor, {
-        MATCH: pattern,
-        COUNT: 50,
-      });
-      cursor = Number(nextCursor);
-      if (keys.length) {
-        await Promise.all(
-          keys.map(async (key) => {
-            const entries = await client.hGetAll(key);
-            const removals = [];
-            for (const [userId, raw] of Object.entries(entries)) {
-              const parsed = deserialize(raw);
-              if (!parsed) {
-                removals.push(userId);
-                continue;
-              }
-              if (now - (parsed.lastHeartbeat || 0) > PRESENCE_TTL_SEC * 1000) {
-                removals.push(userId);
-              }
+  const pattern = "collab:project:*:presence";
+  let cursor = 0;
+  do {
+    const [nextCursor, keys] = await client.scan(cursor, {
+      MATCH: pattern,
+      COUNT: 50,
+    });
+    cursor = Number(nextCursor);
+    if (keys.length) {
+      await Promise.all(
+        keys.map(async (key) => {
+          const entries = await client.hGetAll(key);
+          const removals = [];
+          for (const [userId, raw] of Object.entries(entries)) {
+            const parsed = deserialize(raw);
+            if (!parsed) {
+              removals.push(userId);
+              continue;
             }
-            if (removals.length) {
-              await client.hDel(key, removals);
+            if (now - (parsed.lastHeartbeat || 0) > PRESENCE_TTL_SEC * 1000) {
+              removals.push(userId);
             }
-          })
-        );
-      }
-    } while (cursor !== 0);
+          }
+          if (removals.length) {
+            await client.hDel(key, removals);
+          }
+        })
+      );
+    }
+  } while (cursor !== 0);
   } catch (err) {
     console.error("[CollabPresence] cleanupStalePresence error:", err.message);
   }

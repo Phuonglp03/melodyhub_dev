@@ -1,24 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import NotificationToast from './NotificationToast';
 import { onNotificationNew, offNotificationNew } from '../services/user/socketService';
 
 const NotificationToastContainer = () => {
   const [notifications, setNotifications] = useState([]);
+  const shownIdsRef = useRef(new Set());
 
   useEffect(() => {
-    const handleNewNotification = (notification) => {
-      console.log('[NotificationToast] Nhận thông báo mới:', notification);
-      
-      // Chỉ hiển thị toast cho các thông báo mới (không phải khi load từ API)
-      // Thêm notification vào queue
-      const id = Date.now() + Math.random();
-      setNotifications(prev => [...prev, { ...notification, toastId: id }]);
+    const pushToast = (notification) => {
+      if (!notification) return;
+
+      // Dedupe theo _id/createdAt để tránh trùng giữa socket và polling
+      const key =
+        notification._id ||
+        notification.id ||
+        `${notification.type || 'unknown'}-${notification.createdAt || Date.now()}`;
+
+      if (shownIdsRef.current.has(key)) {
+        return;
+      }
+      shownIdsRef.current.add(key);
+
+      console.log('[NotificationToast] Show toast:', notification);
+      const toastId = Date.now() + Math.random();
+      setNotifications((prev) => [...prev, { ...notification, toastId }]);
     };
 
-    onNotificationNew(handleNewNotification);
+    // Socket channel
+    const handleSocketNotification = (notification) => {
+      pushToast(notification);
+    };
+    onNotificationNew(handleSocketNotification);
+
+    // Fallback channel từ các component khác (ví dụ NotificationBell qua polling)
+    const handleWindowToast = (event) => {
+      pushToast(event.detail);
+    };
+    window.addEventListener('notification:toast', handleWindowToast);
 
     return () => {
-      offNotificationNew(handleNewNotification);
+      offNotificationNew(handleSocketNotification);
+      window.removeEventListener('notification:toast', handleWindowToast);
     };
   }, []);
 

@@ -7,29 +7,40 @@ export const uploadToCloudinary = async (
   options = {}
 ) => {
   try {
+    const { resource_type: resourceType = "image", ...formOptions } = options;
+    const endpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloud_name}/${resourceType}/upload`;
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("upload_preset", preset);
-    formData.append("cloud_name", CLOUDINARY_CONFIG.cloud_name);
 
-    // Add additional options
-    Object.entries(options).forEach(([key, value]) => {
-      formData.append(key, value);
+    Object.entries(formOptions).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        formData.append(key, String(value));
+      }
     });
 
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloud_name}/upload`,
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
+    const response = await fetch(endpoint, {
+      method: "POST",
+      body: formData,
+    });
 
     const data = await response.json();
 
     if (!response.ok) {
       const errorMessage =
-        data?.error?.message || response.statusText || "Bad Request";
+        data?.error?.message ||
+        data?.error ||
+        response.statusText ||
+        "Bad Request";
+      console.error("[Cloudinary] Upload error details:", {
+        status: response.status,
+        statusText: response.statusText,
+        error: data,
+        preset,
+        resourceType,
+        options: formOptions,
+      });
       throw new Error(`Upload failed: ${errorMessage}`);
     }
 

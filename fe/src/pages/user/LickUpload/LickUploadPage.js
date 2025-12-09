@@ -38,7 +38,7 @@ const LickUploadPage = () => {
     key: "",
     tempo: "",
     difficulty: "beginner",
-    isPublic: true,
+    // isPublic: true,
   });
 
   // Audio file state
@@ -528,8 +528,8 @@ const LickUploadPage = () => {
       submitData.append("key", formData.key || "");
       submitData.append("tempo", formData.tempo || "");
       submitData.append("difficulty", formData.difficulty);
-      submitData.append("isPublic", formData.isPublic);
-      submitData.append("status", "active");
+      // submitData.append("isPublic", formData.isPublic);
+      // submitData.append("status", "active");
       // Attach tags as names array; backend can upsert and attach
       submitData.append("tags", JSON.stringify(selectedTags));
 
@@ -538,16 +538,16 @@ const LickUploadPage = () => {
 
       if (response.success) {
         // Clear the audio preview and form to prevent reuse
-        setAudioFile(null);
-        setAudioPreview(null);
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.src = "";
-          audioRef.current = null;
-        }
-        setIsPlaying(false);
+        // setAudioFile(null);
+        // setAudioPreview(null);
+        // if (audioRef.current) {
+        //   audioRef.current.pause();
+        //   audioRef.current.src = "";
+        //   audioRef.current = null;
+        // }
+        // setIsPlaying(false);
 
-        alert("Lick uploaded successfully!");
+        alert("Lick uploaded successfully! It is now pending admin approval.");
         navigate("/library/my-licks");
       } else {
         setError(response.message || "Failed to upload lick");
@@ -1074,7 +1074,7 @@ const LickUploadPage = () => {
           </div>
 
           {/* Visibility */}
-          <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+          {/* <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
             <h3 className="text-lg font-semibold text-white mb-4">
               Visibility
             </h3>
@@ -1090,7 +1090,7 @@ const LickUploadPage = () => {
                 Make this lick public (visible to everyone)
               </span>
             </label>
-          </div>
+          </div> */}
 
           {/* Submit Buttons */}
           <div className="flex space-x-4">

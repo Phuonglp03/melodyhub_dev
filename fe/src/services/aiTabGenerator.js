@@ -716,8 +716,10 @@ export const detectKey = async (audioFile) => {
   }
 };
 
-export default {
+const aiTabGenerator = {
   generateTabFromAudio,
   detectTempo,
   detectKey,
 };
+
+export default aiTabGenerator;

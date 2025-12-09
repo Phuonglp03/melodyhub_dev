@@ -22,6 +22,7 @@ import { getProfileById } from "../services/user/profile";
 
 const MyLickCard = ({
   lick,
+
   onEdit,
   onDelete,
   onClick,
@@ -128,25 +129,34 @@ const MyLickCard = ({
       if (waveform && waveform.length > 0) return;
       try {
         if (!effectiveId) return;
+
+        // Try to get lick details
         const res = await getLickById(effectiveId);
         const wf = res?.data?.waveformData || [];
         if (!aborted && Array.isArray(wf) && wf.length > 0) {
           setWaveform(wf);
           return;
         }
+
         // Fallback: derive from audio URL
         const playRes = await playLickAudio(effectiveId);
         const url = playRes?.data?.audio_url;
         if (url) await computeWaveFromAudio(url);
       } catch (e) {
-        // ignore; keep placeholder UI
+        // Handle 404 or other errors gracefully
+        if (e.message?.includes("404")) {
+          console.warn(`Lick ${effectiveId} not found in database`);
+        } else {
+          console.warn("Failed to load lick waveform:", e.message);
+        }
+        // Keep placeholder UI - don't throw error
       }
     };
     load();
     return () => {
       aborted = true;
     };
-  }, [effectiveId]);
+  }, [effectiveId, waveform]);
 
   // Format date
   const formatDate = (dateString) => {
@@ -277,31 +287,31 @@ const MyLickCard = ({
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-gray-700 hover:shadow-lg transition-all relative group">
       {/* Action Buttons (Show on Hover) */}
-      <div className="absolute top-2 right-2 z-10 flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-1.5 right-1.5 z-10 flex space-x-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => {
             e.stopPropagation();
             onEdit(lick_id);
           }}
-          className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded transition-colors"
           title="Edit"
         >
-          <FaEdit size={12} />
+          <FaEdit size={10} />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onDelete(lick_id);
           }}
-          className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-md transition-colors"
+          className="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded transition-colors"
           title="Delete"
         >
-          <FaTrash size={12} />
+          <FaTrash size={10} />
         </button>
       </div>
 
       {/* Waveform at top - matching LickCard */}
-      <div className="relative h-32 bg-gray-800" onClick={handlePlayPause}>
+      <div className="relative h-20 bg-gray-800" onClick={handlePlayPause}>
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           {waveform && waveform.length > 0 ? (
             <div className="flex items-end justify-center w-[92%] h-[70%]">
@@ -323,33 +333,33 @@ const MyLickCard = ({
               })}
             </div>
           ) : (
-            <span className="text-gray-500 text-sm">No waveform</span>
+            <span className="text-gray-500 text-[10px]">No waveform</span>
           )}
         </div>
 
         <button
           onClick={handlePlayPause}
-          className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full p-3"
+          className="absolute bottom-1.5 right-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full p-2"
         >
           {isLoading ? (
-            <div className="animate-spin h-5 w-5 border-t-2 border-b-2 border-white rounded-full" />
+            <div className="animate-spin h-4 w-4 border-t-2 border-b-2 border-white rounded-full" />
           ) : isPlaying ? (
-            <FaPause size={16} />
+            <FaPause size={12} />
           ) : (
-            <FaPlay size={16} />
+            <FaPlay size={12} />
           )}
         </button>
       </div>
 
       {/* Content section - matching LickCard */}
-      <div className="p-4">
+      <div className="p-3">
         <h3
           onClick={() => onClick(lick_id)}
-          className="text-base font-semibold text-slate-100 mb-2 hover:text-cyan-300 cursor-pointer"
+          className="text-sm font-semibold text-slate-100 mb-1.5 hover:text-cyan-300 cursor-pointer"
         >
           {title}
         </h3>
-        <div className="flex items-center text-xs text-gray-400 mb-3">
+        <div className="flex items-center text-[10px] text-gray-400 mb-2">
           <span className="truncate">
             {creator?.display_name ||
             resolvedCreator?.displayName ||
@@ -371,7 +381,7 @@ const MyLickCard = ({
           ) : null}
           {difficulty ? (
             <span
-              className={`ml-auto px-2 py-0.5 rounded-full text-xs ${
+              className={`ml-auto px-1.5 py-0.5 rounded-full text-[9px] ${
                 difficulty === "beginner"
                   ? "bg-green-900 text-green-300"
                   : difficulty === "intermediate"
@@ -384,7 +394,7 @@ const MyLickCard = ({
           ) : null}
           {status && (
             <span
-              className={`ml-2 px-2 py-0.5 rounded-full text-xs ${getStatusColor(
+              className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] ${getStatusColor(
                 status
               )}`}
             >
@@ -392,19 +402,19 @@ const MyLickCard = ({
             </span>
           )}
           {!is_public && (
-            <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-800 text-gray-400">
+            <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-gray-800 text-gray-400">
               Private
             </span>
           )}
         </div>
 
         {tags && tags.length > 0 && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-4">
-            {tags.slice(0, 8).map((tag) => (
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mb-2">
+            {tags.slice(0, 6).map((tag) => (
               <span
                 key={tag.tag_id}
                 onClick={(e) => e.stopPropagation()}
-                className="text-[11px] text-slate-300 underline underline-offset-4 decoration-slate-600/50 hover:text-slate-100 transition-colors"
+                className="text-[9px] text-slate-300 underline underline-offset-2 decoration-slate-600/50 hover:text-slate-100 transition-colors"
               >
                 {tag.tag_name}
               </span>
@@ -412,47 +422,47 @@ const MyLickCard = ({
           </div>
         )}
 
-        <div className="flex items-center text-xs text-slate-300 mb-4">
-          <span className="flex items-center gap-1 mr-4">
-            <FaWaveSquare className="text-slate-400" size={12} />
+        <div className="flex items-center text-[10px] text-slate-300 mb-2.5">
+          <span className="flex items-center gap-1 mr-3">
+            <FaWaveSquare className="text-slate-400" size={10} />
             {tempo ? `${Math.round(tempo)} BPM` : "—"}
           </span>
           <span className="flex items-center gap-1">
-            <FaMusic className="text-slate-400" size={12} />
+            <FaMusic className="text-slate-400" size={10} />
             {key || "Key N/A"}
           </span>
         </div>
 
-        <div className="flex items-center justify-between text-sm text-gray-300">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between text-xs text-gray-300">
+          <div className="flex items-center gap-3">
             <button
               onClick={handleLike}
               className={`flex items-center gap-1 ${
                 isLiked ? "text-rose-400" : "text-gray-400 hover:text-rose-300"
               }`}
             >
-              <FaHeart />
-              <span>{localLikesCount || 0}</span>
+              <FaHeart size={12} />
+              <span className="text-[10px]">{localLikesCount || 0}</span>
             </button>
             <span className="flex items-center gap-1 text-gray-400">
-              <FaComment />
-              <span>{comments_count || 0}</span>
+              <FaComment size={12} />
+              <span className="text-[10px]">{comments_count || 0}</span>
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onShare?.(lick_id);
               }}
               disabled={shareLoading || !is_public}
-              className={`px-3 py-1 rounded-md text-xs flex items-center gap-1 ${
+              className={`px-2 py-0.5 rounded text-[10px] flex items-center gap-1 ${
                 shareLoading || !is_public
                   ? "bg-gray-700 text-gray-400 cursor-not-allowed"
                   : "bg-purple-600 hover:bg-purple-700 text-white"
               }`}
             >
-              <FaShareAlt />
+              <FaShareAlt size={10} />
               Share
             </button>
             <button
@@ -460,7 +470,7 @@ const MyLickCard = ({
                 e.stopPropagation();
                 onEdit(lick_id);
               }}
-              className="px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs"
+              className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px]"
             >
               Update
             </button>
@@ -469,7 +479,7 @@ const MyLickCard = ({
                 e.stopPropagation();
                 onDelete(lick_id);
               }}
-              className="px-3 py-1 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs"
+              className="px-2 py-0.5 rounded bg-red-600 hover:bg-red-700 text-white text-[10px]"
             >
               Delete
             </button>

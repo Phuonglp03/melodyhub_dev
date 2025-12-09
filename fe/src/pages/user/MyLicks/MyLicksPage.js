@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaSearch, FaPlus, FaFilter, FaLock, FaTimes } from "react-icons/fa";
-import api from "../../../services/api";
+import { Modal, Input, Button, Tag } from "antd";
+import {
+  FaSearch,
+  FaPlus,
+  FaFilter,
+  FaLock,
+  FaTimes,
+  FaInfoCircle,
+  FaCheckCircle,
+} from "react-icons/fa";
 import {
   deleteLick,
   updateLick as apiUpdateLick,
+  getMyLicks,
 } from "../../../services/user/lickService";
 import {
   fetchTagsGrouped,
   upsertTags,
   replaceContentTags,
+  searchTags,
 } from "../../../services/user/tagService";
 import { createPost as createPostApi } from "../../../services/user/post";
 import MyLickCard from "../../../components/MyLickCard";
@@ -28,6 +38,12 @@ const MyLicksPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTags, setSelectedTags] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+
+  // Tag suggestions
+  const [tagInput, setTagInput] = useState("");
+  const [tagSuggestions, setTagSuggestions] = useState([]);
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [loadingTagSuggestions, setLoadingTagSuggestions] = useState(false);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -53,6 +69,10 @@ const MyLicksPage = () => {
   const [tagLookup, setTagLookup] = useState({});
   const [tagLibraryLoaded, setTagLibraryLoaded] = useState(false);
   const [sharingLickId, setSharingLickId] = useState(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareLick, setShareLick] = useState(null);
+  const [shareText, setShareText] = useState("");
+  const [sharing, setSharing] = useState(false);
 
   // Delete confirmation modal
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -83,11 +103,23 @@ const MyLicksPage = () => {
         params.status = statusFilter;
       }
 
-      const res = await api.get(`/licks/user/me`, { params });
+      const res = await getMyLicks(params);
 
-      if (res.data.success) {
-        setLicks(res.data.data);
-        setPagination(res.data.pagination);
+      // Handle different response structures
+      if (res?.success) {
+        setLicks(res.data || []);
+        setPagination(res.pagination || null);
+      } else if (Array.isArray(res?.data)) {
+        // Handle case where response is just data array
+        setLicks(res.data);
+        setPagination(res.pagination || null);
+      } else if (Array.isArray(res)) {
+        // Handle case where response is directly an array
+        setLicks(res);
+        setPagination(null);
+      } else {
+        setLicks([]);
+        setPagination(null);
       }
     } catch (err) {
       console.error("Error fetching my licks:", err);
@@ -108,6 +140,9 @@ const MyLicksPage = () => {
       } else {
         setError(msg || "Failed to load your licks");
       }
+      // Reset to empty array on error
+      setLicks([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }
@@ -187,7 +222,91 @@ const MyLicksPage = () => {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [searchTerm, selectedTags]);
+  }, [searchTerm, selectedTags, statusFilter]);
+
+  // Fetch tag suggestions when tag input changes
+  useEffect(() => {
+    const fetchTagSuggestions = async () => {
+      if (!showTagSuggestions) return;
+
+      try {
+        setLoadingTagSuggestions(true);
+        console.log(
+          "[DEBUG] (IS $) Fetching tag suggestions for query:",
+          tagInput
+        );
+        const res = await searchTags(tagInput);
+        console.log("[DEBUG] (IS $) Tag search response:", {
+          success: res?.success,
+          dataLength: res?.data?.length,
+          data: res?.data,
+        });
+        if (res?.success && Array.isArray(res.data)) {
+          setTagSuggestions(res.data);
+        } else {
+          console.warn(
+            "[DEBUG] (IS $) Invalid tag search response format:",
+            res
+          );
+          setTagSuggestions([]);
+        }
+      } catch (err) {
+        console.error("[DEBUG] (IS $) Error fetching tag suggestions:", {
+          error: err,
+          message: err?.message,
+          response: err?.response?.data,
+          status: err?.response?.status,
+        });
+        setTagSuggestions([]);
+      } finally {
+        setLoadingTagSuggestions(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      fetchTagSuggestions();
+    }, 300); // Debounce tag search
+
+    return () => clearTimeout(timer);
+  }, [tagInput, showTagSuggestions]);
+
+  // Load all tags when tag input is focused and empty
+  useEffect(() => {
+    if (showTagSuggestions && tagInput === "") {
+      const fetchAllTags = async () => {
+        try {
+          setLoadingTagSuggestions(true);
+          console.log("[DEBUG] (IS $) Fetching all tags (empty query)");
+          const res = await searchTags("");
+          console.log("[DEBUG] (IS $) All tags response:", {
+            success: res?.success,
+            dataLength: res?.data?.length,
+            data: res?.data,
+          });
+          if (res?.success && Array.isArray(res.data)) {
+            setTagSuggestions(res.data);
+          } else {
+            console.warn(
+              "[DEBUG] (IS $) Invalid all tags response format:",
+              res
+            );
+            setTagSuggestions([]);
+          }
+        } catch (err) {
+          console.error("[DEBUG] (IS $) Error fetching all tags:", {
+            error: err,
+            message: err?.message,
+            response: err?.response?.data,
+            status: err?.response?.status,
+          });
+          setTagSuggestions([]);
+        } finally {
+          setLoadingTagSuggestions(false);
+        }
+      };
+      fetchAllTags();
+    }
+  }, [showTagSuggestions, tagInput]);
 
   // Handle lick click
   const handleLickClick = (lickId) => {
@@ -239,28 +358,80 @@ const MyLicksPage = () => {
     setConfirmOpen(true);
   };
 
-  const handleShare = async (lickId) => {
+  const handleShare = (lickId) => {
     const lick = licks.find((l) => l.lick_id === lickId);
-    if (!lick || sharingLickId) return;
+    if (!lick || sharing) return;
     if (!lick.is_public) {
       alert("Only public licks can be shared to your feed.");
       return;
     }
+
+    const title = lick.title || "My new lick";
+    const defaultText = `🎸 ${title}`;
+
+    setShareLick(lick);
+    setShareText(defaultText);
+    setShareModalOpen(true);
+  };
+
+  const handleCloseShareModal = () => {
+    if (!sharing) {
+      setShareModalOpen(false);
+      setShareLick(null);
+      setShareText("");
+    }
+  };
+
+  const handleConfirmShare = async () => {
+    if (!shareLick?.lick_id) return;
+
     try {
-      setSharingLickId(lickId);
+      setSharing(true);
+      setSharingLickId(shareLick.lick_id);
+
+      // Generate lick preview URL
       const origin =
         typeof window !== "undefined" ? window.location.origin : "";
-      const shareUrl = origin
-        ? `${origin}/licks/${lickId}`
-        : `/licks/${lickId}`;
-      const title = lick.title || "My new lick";
-      const textContent = `🎸 ${title}\n${shareUrl}`;
-      await createPostApi({ postType: "status_update", textContent });
-      alert("Shared to your feed!"); // replace with toast if available
+      const previewUrl = origin
+        ? `${origin}/licks/${shareLick.lick_id}`
+        : `/licks/${shareLick.lick_id}`;
+
+      console.log('(NO $) [DEBUG][shareLick] Sharing with linkPreview:', {
+        lickId: shareLick.lick_id,
+        previewUrl,
+        title: shareLick.title,
+        linkPreview: {
+          url: previewUrl,
+          title: shareLick.title || "Lick Preview",
+          description: shareLick.description || "",
+        }
+      });
+
+      const response = await createPostApi({
+        postType: "status_update",
+        textContent: shareText,
+        linkPreview: {
+          url: previewUrl,
+          title: shareLick.title || "Lick Preview",
+          description: shareLick.description || "",
+        },
+      });
+
+      console.log('(NO $) [DEBUG][shareLick] Post created response:', {
+        response,
+        hasLinkPreview: !!response?.data?.linkPreview,
+        linkPreviewUrl: response?.data?.linkPreview?.url
+      });
+
+      alert("Shared to your feed!");
+      setShareModalOpen(false);
+      setShareLick(null);
+      setShareText("");
     } catch (err) {
       console.error("Error sharing lick:", err);
       alert(err?.message || "Failed to share lick");
     } finally {
+      setSharing(false);
       setSharingLickId(null);
     }
   };
@@ -372,6 +543,8 @@ const MyLicksPage = () => {
     e.preventDefault();
     if (!editingLick) return;
     setSaving(true);
+    // ⭐ LOGIC: Chỉ cho phép gửi isPublic/isFeatured nếu đã active
+    const canEditSettings = editingLick.status === "active";
     try {
       const payload = {
         title: editForm.title,
@@ -380,9 +553,14 @@ const MyLicksPage = () => {
         tempo: editForm.tempo,
         difficulty: editForm.difficulty,
         status: editForm.status,
-        isPublic: editForm.isPublic,
-        isFeatured: editForm.isFeatured,
+        // isPublic: editForm.isPublic,
+        // isFeatured: editForm.isFeatured,
       };
+      // ⭐ LOGIC: Chỉ gửi settings nếu được phép
+      if (canEditSettings) {
+        payload.isPublic = editForm.isPublic;
+        payload.isFeatured = editForm.isFeatured;
+      }
 
       const res = await apiUpdateLick(editingLick.lick_id, payload);
       let updatedTags = editingLick.tags || [];
@@ -473,13 +651,13 @@ const MyLicksPage = () => {
                   difficulty: updated.difficulty ?? editForm.difficulty,
                   status: updated.status ?? editForm.status,
                   is_public:
-                    typeof updated.isPublic === "boolean"
+                    canEditSettings && typeof updated.isPublic === "boolean"
                       ? updated.isPublic
-                      : editForm.isPublic,
+                      : l.is_public,
                   is_featured:
-                    typeof updated.isFeatured === "boolean"
+                    canEditSettings && typeof updated.isFeatured === "boolean"
                       ? updated.isFeatured
-                      : editForm.isFeatured,
+                      : l.is_featured,
                   tags: updatedTags,
                 }
               : l
@@ -507,6 +685,7 @@ const MyLicksPage = () => {
       setSaving(false);
     }
   };
+  const canEditSettings = editingLick?.status === "active";
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -555,17 +734,129 @@ const MyLicksPage = () => {
 
           {/* Tags Filter */}
           <div className="relative flex-1 min-w-[150px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10">
               <FaFilter size={12} />
             </span>
             <input
               type="text"
               placeholder="Filter by tags..."
-              value={selectedTags}
-              onChange={(e) => setSelectedTags(e.target.value)}
+              value={tagInput}
+              onChange={(e) => {
+                setTagInput(e.target.value);
+                setShowTagSuggestions(true);
+              }}
+              onFocus={() => setShowTagSuggestions(true)}
+              onBlur={() => {
+                // Delay hiding to allow clicking on suggestions
+                setTimeout(() => setShowTagSuggestions(false), 200);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && tagInput.trim()) {
+                  e.preventDefault();
+                  const trimmed = tagInput.trim();
+                  if (selectedTags) {
+                    const existingTags = selectedTags
+                      .split(",")
+                      .map((t) => t.trim())
+                      .filter(Boolean);
+                    if (!existingTags.includes(trimmed)) {
+                      setSelectedTags([...existingTags, trimmed].join(", "));
+                    }
+                  } else {
+                    setSelectedTags(trimmed);
+                  }
+                  setTagInput("");
+                  setShowTagSuggestions(false);
+                }
+              }}
               className="bg-gray-800 border border-gray-700 text-white w-full rounded-md pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
+            {/* Tag Suggestions Dropdown */}
+            {showTagSuggestions && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                {loadingTagSuggestions ? (
+                  <div className="px-4 py-3 text-sm text-gray-400 text-center">
+                    Loading tags...
+                  </div>
+                ) : tagSuggestions.length > 0 ? (
+                  <div className="py-1">
+                    {tagSuggestions.map((tag) => (
+                      <button
+                        key={tag.tag_id}
+                        type="button"
+                        onClick={() => {
+                          const tagName = tag.tag_name || tag.name || "";
+                          if (selectedTags) {
+                            // Add to existing tags (comma-separated)
+                            const existingTags = selectedTags
+                              .split(",")
+                              .map((t) => t.trim())
+                              .filter(Boolean);
+                            if (!existingTags.includes(tagName)) {
+                              setSelectedTags(
+                                [...existingTags, tagName].join(", ")
+                              );
+                            }
+                          } else {
+                            setSelectedTags(tagName);
+                          }
+                          setTagInput("");
+                          setShowTagSuggestions(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors flex items-center justify-between"
+                      >
+                        <span>#{tag.tag_name || tag.name}</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {tag.tag_type || "tag"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : tagInput.trim() === "" ? (
+                  <div className="px-4 py-3 text-sm text-gray-400 text-center">
+                    No tags available. Start typing to search or create tags
+                    when editing a lick.
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 text-sm text-gray-400 text-center">
+                    No tags found matching "{tagInput}"
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+          {/* Selected Tags Display */}
+          {selectedTags && (
+            <div className="flex flex-wrap gap-2 items-center">
+              {selectedTags.split(",").map((tag, idx) => {
+                const trimmed = tag.trim();
+                if (!trimmed) return null;
+                return (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-300"
+                  >
+                    #{trimmed}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tags = selectedTags
+                          .split(",")
+                          .map((t) => t.trim())
+                          .filter(Boolean);
+                        tags.splice(idx, 1);
+                        setSelectedTags(tags.join(", "));
+                      }}
+                      className="text-orange-300 hover:text-orange-200 transition-colors"
+                      aria-label={`Remove ${trimmed}`}
+                    >
+                      <FaTimes size={10} />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Results Count */}
@@ -625,7 +916,7 @@ const MyLicksPage = () => {
 
       {/* Lick Cards Grid */}
       {!loading && !error && licks.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {licks.map((lick) => (
             <MyLickCard
               key={lick.lick_id}
@@ -634,7 +925,7 @@ const MyLicksPage = () => {
               onEdit={handleEdit}
               onDelete={handleDelete}
               onShare={handleShare}
-              shareLoading={sharingLickId === lick.lick_id}
+              shareLoading={sharing && shareLick?.lick_id === lick.lick_id}
             />
           ))}
         </div>
@@ -688,7 +979,7 @@ const MyLicksPage = () => {
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/60"
+            className="fixed inset-0 bg-black/60"
             onClick={() => {
               if (!saving) {
                 setIsEditOpen(false);
@@ -696,9 +987,11 @@ const MyLicksPage = () => {
               }
             }}
           />
-          <div className="relative z-10 w-full max-w-2xl mx-4 bg-gray-900 border border-gray-800 rounded-lg shadow-xl">
-            <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">Edit Lick</h2>
+          <div className="relative z-10 w-full max-w-2xl mx-4 my-8 bg-gray-900 border border-gray-800 rounded-lg shadow-xl max-h-[90vh] flex flex-col overflow-y-auto">
+            <div className="px-5 py-3 border-t border-b border-gray-800 flex items-center justify-between flex-shrink-0 sticky top-4 bg-gray-900/95 backdrop-blur-sm rounded-t-lg">
+              <h2 className="text-base font-semibold text-white tracking-wide">
+                Edit Lick
+              </h2>
               <button
                 className="text-gray-400 hover:text-white"
                 onClick={() => {
@@ -711,33 +1004,55 @@ const MyLicksPage = () => {
                 ✕
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="px-6 py-5 space-y-4">
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">
-                  Title
-                </label>
-                <input
-                  name="title"
-                  value={editForm.title}
-                  onChange={handleEditChange}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  required
-                />
+            <form
+              onSubmit={handleEditSubmit}
+              className="px-5 py-4 space-y-6 overflow-y-auto"
+            >
+              {/* Basic info */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                  Basic Info
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Title
+                    </label>
+                    <input
+                      name="title"
+                      value={editForm.title}
+                      onChange={handleEditChange}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      placeholder="Name this lick so you can find it later"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      name="description"
+                      value={editForm.description}
+                      onChange={handleEditChange}
+                      rows={3}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                      placeholder="Add context: where to use this lick, feel, or tips to play it..."
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">
-                  Description
-                </label>
-                <textarea
-                  name="description"
-                  value={editForm.description}
-                  onChange={handleEditChange}
-                  rows={3}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">Tags</label>
+
+              {/* Tags section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                    Tags & Mood
+                  </p>
+                  <span className="text-[11px] text-gray-500">
+                    Help you search and recommend this lick
+                  </span>
+                </div>
                 {Object.keys(tagGroups).length > 0 ? (
                   <div className="bg-gray-900/40 border border-gray-800 rounded-lg p-4">
                     <TagFlowBoard
@@ -803,101 +1118,150 @@ const MyLicksPage = () => {
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">
-                    Key
-                  </label>
-                  <input
-                    name="key"
-                    value={editForm.key}
-                    onChange={handleEditChange}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">
-                    Tempo (BPM)
-                  </label>
-                  <input
-                    name="tempo"
-                    value={editForm.tempo}
-                    onChange={handleEditChange}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">
-                    Difficulty
-                  </label>
-                  <select
-                    name="difficulty"
-                    value={editForm.difficulty}
-                    onChange={handleEditChange}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="">Select</option>
-                    <option value="beginner">Beginner</option>
-                    <option value="intermediate">Intermediate</option>
-                    <option value="advanced">Advanced</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">
-                    Status
-                  </label>
-                  <select
-                    name="status"
-                    value={editForm.status}
-                    onChange={handleEditChange}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="">Select</option>
-                    <option value="active">Active</option>
-                    <option value="draft">Draft</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+              {/* Technical details */}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                  Technical Details
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Key
+                    </label>
+                    <input
+                      name="key"
+                      value={editForm.key}
+                      onChange={handleEditChange}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Tempo (BPM)
+                    </label>
+                    <input
+                      name="tempo"
+                      value={editForm.tempo}
+                      onChange={handleEditChange}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Difficulty
+                    </label>
+                    <select
+                      name="difficulty"
+                      value={editForm.difficulty}
+                      onChange={handleEditChange}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="">Select</option>
+                      <option value="beginner">Beginner</option>
+                      <option value="intermediate">Intermediate</option>
+                      <option value="advanced">Advanced</option>
+                    </select>
+                  </div>
+                  {/* Status (Read-only) */}
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Status
+                    </label>
+                    <div
+                      className={`w-full px-3 py-2 text-sm font-bold uppercase rounded-md border border-gray-700 ${
+                        editingLick.status === "active"
+                          ? "bg-green-900/30 text-green-400"
+                          : editingLick.status === "pending"
+                          ? "bg-yellow-900/30 text-yellow-400"
+                          : "bg-gray-800 text-gray-400"
+                      }`}
+                    >
+                      {editingLick.status}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-6">
-                <label className="inline-flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    name="isPublic"
-                    checked={editForm.isPublic}
-                    onChange={handleEditChange}
-                    className="form-checkbox h-4 w-4 text-orange-500 bg-gray-800 border-gray-700"
-                  />
-                  Public
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    name="isFeatured"
-                    checked={editForm.isFeatured}
-                    onChange={handleEditChange}
-                    className="form-checkbox h-4 w-4 text-orange-500 bg-gray-800 border-gray-700"
-                  />
-                  Featured
-                </label>
+
+              {/* ⭐ SETTINGS SECTION: PUBLIC & FEATURED ⭐ */}
+              <div
+                className={`mt-4 p-4 rounded-lg border ${
+                  canEditSettings
+                    ? "bg-gray-800/30 border-gray-700"
+                    : "bg-gray-800/50 border-gray-700/50 opacity-75"
+                }`}
+              >
+                <div className="flex items-center gap-6">
+                  {/* Public Checkbox */}
+                  <label
+                    className={`inline-flex items-center gap-3 text-sm ${
+                      canEditSettings
+                        ? "text-gray-300 cursor-pointer"
+                        : "text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="isPublic"
+                      checked={editForm.isPublic}
+                      onChange={handleEditChange}
+                      disabled={!canEditSettings} // Disable nếu pending
+                      className="form-checkbox h-5 w-5 text-orange-500 bg-gray-800 border-gray-600 rounded disabled:opacity-50"
+                    />
+                    <span className="font-medium">Public</span>
+                  </label>
+
+                  {/* Featured Checkbox */}
+                  <label
+                    className={`inline-flex items-center gap-3 text-sm ${
+                      canEditSettings
+                        ? "text-gray-300 cursor-pointer"
+                        : "text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="isFeatured"
+                      checked={editForm.isFeatured}
+                      onChange={handleEditChange}
+                      disabled={!canEditSettings} // Disable nếu pending
+                      className="form-checkbox h-5 w-5 text-orange-500 bg-gray-800 border-gray-600 rounded disabled:opacity-50"
+                    />
+                    <span className="font-medium">Featured</span>
+                  </label>
+                </div>
+
+                {/* Helper Text */}
+                {!canEditSettings && (
+                  <div className="mt-3 flex items-start gap-2 text-xs text-yellow-500 bg-yellow-900/10 p-2 rounded">
+                    <FaLock size={12} className="mt-0.5 flex-shrink-0" />
+                    <span>
+                      Visibility settings are locked while{" "}
+                      <strong>Pending Approval</strong>. Once approved, you can
+                      change these.
+                    </span>
+                  </div>
+                )}
+                {canEditSettings && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
+                    <FaCheckCircle size={12} />
+                    <span>
+                      Lick is active. You can update visibility settings.
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-end gap-3 pt-2">
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-800 mt-4 bg-gray-900">
                 <button
                   type="button"
-                  className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
-                  onClick={() => {
-                    if (!saving) {
-                      setIsEditOpen(false);
-                      setEditingLick(null);
-                    }
-                  }}
-                  disabled={saving}
+                  className="px-4 py-1.5 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
+                  onClick={() => !saving && setIsEditOpen(false)}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md disabled:opacity-50"
+                  className="px-4 py-1.5 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-md disabled:opacity-50"
                   disabled={saving}
                 >
                   {saving ? "Saving..." : "Save Changes"}
@@ -959,6 +1323,156 @@ const MyLicksPage = () => {
           </div>
         </div>
       )}
+
+      {/* Share Lick Modal */}
+      <Modal
+        open={shareModalOpen}
+        title={
+          <span style={{ color: "#fff", fontWeight: 600 }}>Chia sẻ lick</span>
+        }
+        onCancel={handleCloseShareModal}
+        footer={
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <Button
+              shape="round"
+              onClick={handleCloseShareModal}
+              disabled={sharing}
+              style={{
+                height: 44,
+                borderRadius: 22,
+                padding: 0,
+                width: 108,
+                background: "#1f1f1f",
+                color: "#e5e7eb",
+                borderColor: "#303030",
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              shape="round"
+              type="primary"
+              loading={sharing}
+              onClick={handleConfirmShare}
+              disabled={sharing || !shareText.trim()}
+              style={{
+                height: 44,
+                borderRadius: 22,
+                padding: 0,
+                width: 108,
+                background: "#7c3aed",
+                borderColor: "#7c3aed",
+              }}
+            >
+              Chia sẻ
+            </Button>
+          </div>
+        }
+        styles={{
+          content: { background: "#0f0f10" },
+          header: {
+            background: "#0f0f10",
+            borderBottom: "1px solid #1f1f1f",
+          },
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Input.TextArea
+            placeholder="Chia sẻ điều gì đó..."
+            autoSize={{ minRows: 6, maxRows: 16 }}
+            value={shareText}
+            onChange={(e) => setShareText(e.target.value)}
+            maxLength={300}
+            showCount
+            style={{
+              background: "#1a1a1a",
+              color: "#e5e7eb",
+              borderColor: "#3a3a3a",
+            }}
+          />
+
+          {/* Lick Preview Link Section */}
+          {shareLick && (
+            <div
+              style={{
+                background: "#141414",
+                border: "1px solid #262626",
+                borderRadius: 16,
+                padding: "18px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: 4,
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      color: "#f8fafc",
+                      fontWeight: 600,
+                      fontSize: 16,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Link preview lick
+                  </div>
+                  <div
+                    style={{
+                      color: "#9ca3af",
+                      fontSize: 13,
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    Link này sẽ hiển thị preview của lick trong bài đăng.
+                  </div>
+                </div>
+                <Tag
+                  color="#1f1f1f"
+                  style={{
+                    borderRadius: 999,
+                    color: "#9ca3af",
+                    border: "none",
+                    marginLeft: 12,
+                  }}
+                >
+                  Tự động
+                </Tag>
+              </div>
+              <Input
+                value={
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}/licks/${shareLick.lick_id}`
+                    : `/licks/${shareLick.lick_id}`
+                }
+                readOnly
+                style={{
+                  width: "100%",
+                  backgroundColor: "#1a1a1a",
+                  border: "1px solid #3a3a3a",
+                  borderRadius: 8,
+                  color: "#9ca3af",
+                  cursor: "text",
+                }}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

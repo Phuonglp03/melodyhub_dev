@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   FaSearch,
@@ -18,9 +18,11 @@ import {
   removeLickFromPlaylist,
   updatePlaylist,
 } from "../../../services/user/playlistService";
-import { getCommunityLicks } from "../../../services/user/lickService";
+import {
+  getCommunityLicks,
+  getMyLicks,
+} from "../../../services/user/lickService";
 import LickCard from "../../../components/LickCard";
-import api from "../../../services/api";
 import { useSelector } from "react-redux";
 
 const PlaylistDetailPage = () => {
@@ -40,7 +42,7 @@ const PlaylistDetailPage = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [addingLick, setAddingLick] = useState(null);
-  
+
   // Suggested licks state
   const [suggestedLicks, setSuggestedLicks] = useState([]);
   const [loadingSuggested, setLoadingSuggested] = useState(false);
@@ -50,97 +52,202 @@ const PlaylistDetailPage = () => {
   const [editForm, setEditForm] = useState({ name: "", description: "" });
   const [saving, setSaving] = useState(false);
 
+  // Toast notification state
+  const [toast, setToast] = useState({
+    show: false,
+    message: "",
+    type: "success",
+  });
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState({
+    show: false,
+    message: "",
+    onConfirm: null,
+    lickId: null,
+  });
+
+  // Memoize existing lick IDs to avoid recalculating on every render
+  const existingLickIds = useMemo(
+    () => new Set((playlist?.licks || []).map((l) => l.lick_id)),
+    [playlist?.licks]
+  );
+
+  const fetchPlaylist = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getPlaylistById(playlistId);
+      if (res.success) {
+        setPlaylist(res.data);
+      } else {
+        setError("Playlist not found");
+      }
+    } catch (err) {
+      console.error("Error fetching playlist:", err);
+      setError(err.message || "Failed to load playlist");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSuggestedLicks = useCallback(async () => {
+    try {
+      setLoadingSuggested(true);
+      const promises = [];
+
+      // Always load community licks
+      promises.push(
+        getCommunityLicks({
+          sortBy: "popular",
+          limit: 12,
+        }).catch((err) => {
+          console.error("(NO $) [DEBUG] Error loading community licks:", err);
+          return { success: false, data: [] };
+        })
+      );
+
+      // If playlist is private, also load user's private licks
+      if (playlist && !playlist.is_public && authUser) {
+        promises.push(
+          getMyLicks({
+            status: "active",
+            limit: 12,
+          }).catch((err) => {
+            console.error("(NO $) [DEBUG] Error loading my licks:", err);
+            return { success: false, data: [] };
+          })
+        );
+      }
+
+      // Use allSettled to handle partial failures gracefully
+      const results = await Promise.allSettled(promises);
+      const communityLicks =
+        results[0]?.status === "fulfilled" && results[0].value?.success
+          ? results[0].value.data
+          : [];
+      const myLicks =
+        results[1]?.status === "fulfilled" && results[1].value?.success
+          ? results[1].value.data
+          : [];
+
+      // Use memoized existingLickIds for O(n) duplicate removal
+      const uniqueLickMap = new Map();
+      [...communityLicks, ...myLicks].forEach((lick) => {
+        if (
+          !existingLickIds.has(lick.lick_id) &&
+          !uniqueLickMap.has(lick.lick_id)
+        ) {
+          uniqueLickMap.set(lick.lick_id, lick);
+        }
+      });
+
+      setSuggestedLicks(Array.from(uniqueLickMap.values()));
+    } catch (err) {
+      console.error("(NO $) [DEBUG] Error loading suggested licks:", err);
+      setSuggestedLicks([]);
+    } finally {
+      setLoadingSuggested(false);
+    }
+  }, [playlist, authUser, existingLickIds]);
+
   useEffect(() => {
     fetchPlaylist();
-    
+
     // Auto-open search if this is a new playlist
     if (searchParams.get("new") === "true") {
       setShowSearch(true);
     }
   }, [playlistId, searchParams]);
 
+  // Memoize whether we should load suggested licks
+  const shouldLoadSuggested = useMemo(
+    () => playlist && (playlist.licks_count === 0 || showSearch),
+    [playlist, showSearch]
+  );
+
   // Load suggested licks when playlist is empty or search is shown
   useEffect(() => {
-    if (playlist && (playlist.licks_count === 0 || showSearch)) {
+    if (shouldLoadSuggested) {
       loadSuggestedLicks();
     }
-  }, [playlist, showSearch]);
+  }, [shouldLoadSuggested, loadSuggestedLicks]);
 
-  const fetchPlaylist = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await api.get(`/playlists/${playlistId}`);
-      if (res.data.success) {
-        setPlaylist(res.data.data);
-      } else {
-        setError("Playlist not found");
+  const handleSearch = useCallback(
+    async (query) => {
+      if (!query.trim()) {
+        setSearchResults([]);
+        // Show suggested licks when search is empty
+        if (suggestedLicks.length > 0) {
+          setSearchResults(suggestedLicks);
+        }
+        return;
       }
-    } catch (err) {
-      console.error("Error fetching playlist:", err);
-      setError(err.response?.data?.message || "Failed to load playlist");
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const loadSuggestedLicks = async () => {
-    try {
-      setLoadingSuggested(true);
-      // Load popular/trending licks as suggestions
-      const res = await getCommunityLicks({
-        sortBy: "popular",
-        limit: 12,
-      });
-      if (res.success) {
-        // Filter out licks already in playlist
-        const existingLickIds = new Set(
-          (playlist?.licks || []).map((l) => l.lick_id)
-        );
-        const filtered = res.data.filter(
-          (lick) => !existingLickIds.has(lick.lick_id)
-        );
-        setSuggestedLicks(filtered);
-      }
-    } catch (err) {
-      console.error("Error loading suggested licks:", err);
-    } finally {
-      setLoadingSuggested(false);
-    }
-  };
+      try {
+        setSearching(true);
+        const promises = [];
 
-  const handleSearch = async (query) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      // Show suggested licks when search is empty
-      if (suggestedLicks.length > 0) {
-        setSearchResults(suggestedLicks);
-      }
-      return;
-    }
+        // Always search community licks
+        promises.push(
+          getCommunityLicks({
+            search: query,
+            limit: 20,
+          }).catch((err) => {
+            console.error(
+              "(NO $) [DEBUG] Error searching community licks:",
+              err
+            );
+            return { success: false, data: [] };
+          })
+        );
 
-    try {
-      setSearching(true);
-      const res = await getCommunityLicks({
-        search: query,
-        limit: 20,
-      });
-      if (res.success) {
-        // Filter out licks already in playlist
-        const existingLickIds = new Set(
-          (playlist?.licks || []).map((l) => l.lick_id)
-        );
-        const filtered = res.data.filter(
-          (lick) => !existingLickIds.has(lick.lick_id)
-        );
-        setSearchResults(filtered);
+        // If playlist is private, also search user's private licks
+        if (playlist && !playlist.is_public && authUser) {
+          promises.push(
+            getMyLicks({
+              search: query,
+              status: "active",
+              limit: 20,
+            }).catch((err) => {
+              console.error("(NO $) [DEBUG] Error searching my licks:", err);
+              return { success: false, data: [] };
+            })
+          );
+        }
+
+        // Use allSettled to handle partial failures gracefully
+        const results = await Promise.allSettled(promises);
+        const communityLicks =
+          results[0]?.status === "fulfilled" && results[0].value?.success
+            ? results[0].value.data
+            : [];
+        const myLicks =
+          results[1]?.status === "fulfilled" && results[1].value?.success
+            ? results[1].value.data
+            : [];
+
+        // Use memoized existingLickIds for O(n) duplicate removal
+        const uniqueLickMap = new Map();
+        [...communityLicks, ...myLicks].forEach((lick) => {
+          if (
+            !existingLickIds.has(lick.lick_id) &&
+            !uniqueLickMap.has(lick.lick_id)
+          ) {
+            uniqueLickMap.set(lick.lick_id, lick);
+          }
+        });
+
+        setSearchResults(Array.from(uniqueLickMap.values()));
+      } catch (err) {
+        console.error("(NO $) [DEBUG] Error searching licks:", err);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
       }
-    } catch (err) {
-      console.error("Error searching licks:", err);
-    } finally {
-      setSearching(false);
-    }
-  };
+    },
+    [playlist, authUser, existingLickIds, suggestedLicks]
+  );
 
   useEffect(() => {
     if (showSearch && searchTerm) {
@@ -151,7 +258,7 @@ const PlaylistDetailPage = () => {
     } else {
       setSearchResults([]);
     }
-  }, [searchTerm, showSearch]);
+  }, [searchTerm, showSearch, handleSearch]);
 
   const handleAddLick = async (lickId) => {
     try {
@@ -174,15 +281,74 @@ const PlaylistDetailPage = () => {
     }
   };
 
-  const handleRemoveLick = async (lickId) => {
-    if (!window.confirm("Remove this lick from playlist?")) return;
-    try {
-      await removeLickFromPlaylist(playlistId, lickId);
-      await fetchPlaylist();
-    } catch (err) {
-      console.error("Error removing lick:", err);
-      alert(err.message || "Failed to remove lick");
-    }
+  const handleRemoveLick = (lickId) => {
+    // Show confirmation modal instead of browser alert
+    setConfirmModal({
+      show: true,
+      message: "Remove this lick from playlist?",
+      onConfirm: async () => {
+        try {
+          const result = await removeLickFromPlaylist(playlistId, lickId);
+          if (result.success) {
+            // Close confirmation modal
+            setConfirmModal({
+              show: false,
+              message: "",
+              onConfirm: null,
+              lickId: null,
+            });
+
+            // Show success toast
+            setToast({
+              show: true,
+              message: "Lick removed from playlist successfully",
+              type: "success",
+            });
+
+            // Auto-hide toast after 3 seconds
+            setTimeout(() => {
+              setToast({ show: false, message: "", type: "success" });
+            }, 3000);
+
+            // Refresh playlist to show updated list
+            await fetchPlaylist();
+            // Also update suggested licks if search is open
+            if (showSearch) {
+              loadSuggestedLicks();
+            }
+          } else {
+            throw new Error(result.message || "Failed to remove lick");
+          }
+        } catch (err) {
+          console.error("(NO $) [DEBUG] Error removing lick:", err);
+          const errorMessage =
+            err.response?.data?.message ||
+            err.message ||
+            "Failed to remove lick";
+
+          // Close confirmation modal
+          setConfirmModal({
+            show: false,
+            message: "",
+            onConfirm: null,
+            lickId: null,
+          });
+
+          // Show error toast
+          setToast({
+            show: true,
+            message: errorMessage,
+            type: "error",
+          });
+
+          // Auto-hide toast after 4 seconds
+          setTimeout(() => {
+            setToast({ show: false, message: "", type: "error" });
+          }, 4000);
+        }
+      },
+      lickId,
+    });
   };
 
   const handleDelete = async () => {
@@ -392,7 +558,9 @@ const PlaylistDetailPage = () => {
                 />
               ) : (
                 <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs">
-                  {(playlist.owner?.display_name || playlist.owner?.username || "U")[0].toUpperCase()}
+                  {(playlist.owner?.display_name ||
+                    playlist.owner?.username ||
+                    "U")[0].toUpperCase()}
                 </div>
               )}
               <span className="text-sm font-medium">
@@ -541,7 +709,9 @@ const PlaylistDetailPage = () => {
                               <div
                                 key={i}
                                 className="w-0.5 mx-px bg-orange-500"
-                                style={{ height: `${Math.max(amp * 100, 20)}%` }}
+                                style={{
+                                  height: `${Math.max(amp * 100, 20)}%`,
+                                }}
                               />
                             ))}
                           </div>
@@ -596,7 +766,8 @@ const PlaylistDetailPage = () => {
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-bold">Licks in this playlist</h2>
               <span className="text-sm text-gray-400">
-                {playlist.licks.length} {playlist.licks.length === 1 ? "lick" : "licks"}
+                {playlist.licks.length}{" "}
+                {playlist.licks.length === 1 ? "lick" : "licks"}
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -606,8 +777,9 @@ const PlaylistDetailPage = () => {
                   {isOwner && (
                     <button
                       onClick={() => handleRemoveLick(lick.lick_id)}
-                      className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                      className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full opacity-80 group-hover:opacity-100 transition-opacity z-20 shadow-lg"
                       title="Remove from playlist"
+                      aria-label="Remove lick from playlist"
                     >
                       <FaTimes size={12} />
                     </button>
@@ -649,12 +821,14 @@ const PlaylistDetailPage = () => {
           />
           <div className="relative z-10 w-full max-w-md mx-4 bg-gray-900 border border-gray-800 rounded-lg shadow-xl">
             <div className="px-6 py-4 border-b border-gray-800">
-              <h2 className="text-lg font-semibold text-white">Delete Playlist</h2>
+              <h2 className="text-lg font-semibold text-white">
+                Delete Playlist
+              </h2>
             </div>
             <div className="px-6 py-5 space-y-3">
               <p className="text-gray-300 text-sm">
-                Are you sure you want to delete this playlist? This action cannot be
-                undone.
+                Are you sure you want to delete this playlist? This action
+                cannot be undone.
               </p>
             </div>
             <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3">
@@ -678,6 +852,106 @@ const PlaylistDetailPage = () => {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() =>
+              setConfirmModal({
+                show: false,
+                message: "",
+                onConfirm: null,
+                lickId: null,
+              })
+            }
+          />
+          <div className="relative z-10 w-full max-w-md mx-4 bg-gray-900 border border-gray-800 rounded-lg shadow-xl">
+            <div className="px-6 py-4 border-b border-gray-800">
+              <h2 className="text-lg font-semibold text-white">
+                Confirm Removal
+              </h2>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-gray-300 text-sm">{confirmModal.message}</p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700 transition-colors"
+                onClick={() =>
+                  setConfirmModal({
+                    show: false,
+                    message: "",
+                    onConfirm: null,
+                    lickId: null,
+                  })
+                }
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
+                onClick={() => {
+                  if (confirmModal.onConfirm) {
+                    confirmModal.onConfirm();
+                  }
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast.show && (
+        <div
+          className={`fixed top-20 right-6 z-50 px-6 py-4 rounded-lg shadow-2xl transition-all duration-300 ${
+            toast.type === "success"
+              ? "bg-green-600 text-white"
+              : "bg-red-600 text-white"
+          }`}
+          style={{
+            animation: "slideInRight 0.3s ease-out",
+            minWidth: "300px",
+            maxWidth: "400px",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">
+              {toast.type === "success" ? "✓" : "✕"}
+            </span>
+            <span className="flex-1 font-medium">{toast.message}</span>
+            <button
+              onClick={() =>
+                setToast({ show: false, message: "", type: "success" })
+              }
+              className="text-white hover:text-gray-200 transition-colors"
+              aria-label="Close notification"
+            >
+              <FaTimes size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Animation Styles */}
+      <style>{`
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 };

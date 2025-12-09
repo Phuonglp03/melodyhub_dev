@@ -6,7 +6,6 @@ import {
   deletePlaylist,
 } from "../../../services/user/playlistService";
 import CreatePlaylistModal from "../../../components/CreatePlaylistModal";
-import api from "../../../services/api";
 
 const MyPlaylistsPage = () => {
   const navigate = useNavigate();
@@ -34,11 +33,21 @@ const MyPlaylistsPage = () => {
       if (searchTerm) params.search = searchTerm;
       if (filterPublic !== "") params.isPublic = filterPublic === "true";
 
-      const res = await api.get("/playlists/me", { params });
+      const res = await getMyPlaylists(params);
 
-      if (res.data.success) {
-        setPlaylists(res.data.data);
-        setPagination(res.data.pagination);
+      // Handle different response structures
+      if (res?.success) {
+        setPlaylists(res.data || []);
+        setPagination(res.pagination || null);
+      } else if (Array.isArray(res?.data)) {
+        setPlaylists(res.data);
+        setPagination(res.pagination || null);
+      } else if (Array.isArray(res)) {
+        setPlaylists(res);
+        setPagination(null);
+      } else {
+        setPlaylists([]);
+        setPagination(null);
       }
     } catch (err) {
       console.error("Error fetching playlists:", err);
@@ -59,6 +68,9 @@ const MyPlaylistsPage = () => {
       } else {
         setError(msg || "Failed to load playlists");
       }
+      // Reset to empty array on error
+      setPlaylists([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }

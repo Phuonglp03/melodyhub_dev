@@ -1,19 +1,19 @@
 import api from '../api';
 
 export const getMyProfile = async () => {
-  const { data } = await api.get('/users/profile');
-  return data;
+  const res = await api.get('/users/profile');
+  return res.data;
 };
 
 export const getProfileById = async (userId) => {
   if (!userId) throw new Error('userId is required');
-  const { data } = await api.get(`/users/${userId}`);
-  return data;
+  const res = await api.get(`/users/${userId}`);
+  return res.data;
 };
 
 export const updateMyProfile = async (payload) => {
-  const { data } = await api.put('/users/profile', payload);
-  return data;
+  const res = await api.put('/users/profile', payload);
+  return res.data;
 };
 
 export const uploadMyAvatar = async (file) => {
@@ -28,7 +28,6 @@ export const uploadMyAvatar = async (file) => {
   // Multer ở BE chỉ nhận field name 'avatar'
   const form = new FormData();
   form.append('avatar', fileToUpload); // QUAN TRỌNG: field name phải là 'avatar'
-  // KHÔNG append các field khác ở đây (sẽ gửi riêng qua JSON khi Save changes)
   
   // Debug: Log tất cả fields trong FormData để verify
   console.log('[Upload Avatar] FormData entries:');
@@ -47,10 +46,10 @@ export const uploadMyAvatar = async (file) => {
     type: fileToUpload.type
   });
   
-  const { data } = await api.post('/users/profile/avatar', form);
+  const res = await api.post('/users/profile/avatar', form);
   
-  console.log('[Upload Avatar] Response:', data);
-  return data;
+  console.log('[Upload Avatar] Response:', res.data);
+  return res.data;
 };
 
 export const uploadMyCoverPhoto = async (file) => {
@@ -82,34 +81,67 @@ export const uploadMyCoverPhoto = async (file) => {
     type: fileToUpload.type
   });
   
-  const { data } = await api.post('/users/profile/cover-photo', form);
+  const res = await api.post('/users/profile/cover-photo', form);
   
-  console.log('[Upload Cover Photo] Response:', data);
-  return data;
+  console.log('[Upload Cover Photo] Response:', res.data);
+  return res.data;
 };
 
 export const followUser = async (userId) => {
   if (!userId) throw new Error('userId is required');
-  const { data } = await api.post(`/users/${userId}/follow`);
-  return data;
+  const res = await api.post(`/users/${userId}/follow`);
+  return res.data;
 };
 
 export const unfollowUser = async (userId) => {
   if (!userId) throw new Error('userId is required');
-  const { data } = await api.delete(`/users/${userId}/follow`);
-  return data;
+  const res = await api.delete(`/users/${userId}/follow`);
+  return res.data;
 };
 
 export const getFollowSuggestions = async (limit = 5) => {
-  const { data } = await api.get(`/users/suggestions/list`, { params: { limit } });
-  return data;
+  const res = await api.get(`/users/suggestions/list`, { params: { limit } });
+  return res.data;
 };
 
 export const getFollowingList = async (search = '', limit = 50) => {
-  const { data } = await api.get(`/users/following`, { params: { search, limit } });
-  return data;
+  const res = await api.get(`/users/following`, { params: { search, limit } });
+  return res.data;
 };
 
-export default { getMyProfile, updateMyProfile, uploadMyAvatar, uploadMyCoverPhoto, followUser, unfollowUser, getFollowSuggestions, getFollowingList };
+export const getFollowersList = async (userId, search = '', limit = 50) => {
+  if (!userId) throw new Error('userId is required');
+  const res = await api.get(`/users/${userId}/followers`, { params: { search, limit } });
+  return res.data;
+};
+
+export const getUserFollowingList = async (userId, search = '', limit = 50) => {
+  if (!userId) throw new Error('userId is required');
+  const res = await api.get(`/users/${userId}/following`, { params: { search, limit } });
+  return res.data;
+};
+
+export const searchUsers = async (query, limit = 10) => {
+  const q = (query || '').trim();
+  if (!q) {
+    return { success: true, data: [] };
+  }
+  const res = await api.get('/users/search', { params: { q, limit } });
+  return res.data;
+};
+
+const profileService = { 
+  getMyProfile, 
+  updateMyProfile, 
+  uploadMyAvatar, 
+  uploadMyCoverPhoto, 
+  followUser, 
+  unfollowUser, 
+  getFollowSuggestions, 
+  getFollowingList, 
+  searchUsers 
+};
+
+export default profileService;
 
 

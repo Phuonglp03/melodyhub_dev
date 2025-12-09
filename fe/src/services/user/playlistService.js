@@ -10,23 +10,23 @@ export const getCommunityPlaylists = async (params = {}) => {
       limit = 20,
     } = params;
 
-    const queryParams = {
-      page,
-      limit,
-      sortBy,
-    };
+    const res = await api.get('/playlists/community', {
+      params: {
+        page: page.toString(),
+        limit: limit.toString(),
+        sortBy,
+        ...(search && { search })
+      }
+    });
 
-    if (search) queryParams.search = search;
-
-    const { data } = await api.get('/playlists/community', { params: queryParams });
-    return data;
+    return res.data;
   } catch (error) {
     console.error("Error fetching community playlists:", error);
     throw error;
   }
 };
 
-// Get user's playlists
+// Get current user's playlists
 export const getMyPlaylists = async (params = {}) => {
   try {
     const {
@@ -37,17 +37,47 @@ export const getMyPlaylists = async (params = {}) => {
     } = params;
 
     const queryParams = {
-      page,
-      limit,
+      page: page.toString(),
+      limit: limit.toString(),
     };
 
     if (search) queryParams.search = search;
-    if (isPublic !== undefined) queryParams.isPublic = isPublic;
+    if (isPublic !== undefined) queryParams.isPublic = isPublic.toString();
 
-    const res = await api.get('/playlists/me', { params: queryParams });
+    const res = await api.get(`/playlists/me`, { params: queryParams });
     return res.data;
   } catch (error) {
     console.error("Error fetching playlists:", error);
+    throw error;
+  }
+};
+
+// Get playlists of a specific user (by userId)
+export const getPlaylistsByUser = async (userId, params = {}) => {
+  try {
+    if (!userId) throw new Error("userId is required");
+
+    const {
+      search = "",
+      isPublic,
+      page = 1,
+      limit = 20,
+    } = params;
+
+    const queryParams = {
+      page: page.toString(),
+      limit: limit.toString(),
+    };
+
+    if (search) queryParams.search = search;
+    if (isPublic !== undefined) queryParams.isPublic = isPublic.toString();
+
+    const res = await api.get(`/playlists/user/${userId}`, {
+      params: queryParams,
+    });
+    return res.data;
+  } catch (error) {
+    console.error("Error fetching playlists by user:", error);
     throw error;
   }
 };
@@ -128,3 +158,4 @@ export const reorderPlaylistLicks = async (playlistId, lickIds) => {
     throw error;
   }
 };
+

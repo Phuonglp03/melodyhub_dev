@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, Empty, Spin, Button, Space, Avatar, Divider, Tabs, Badge } from 'antd';
+import { Layout, Typography, Empty, Spin, Button, Space, Avatar, Tabs, Badge } from 'antd';
 import { CheckOutlined, DeleteOutlined, BellOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from '../../../services/user/notificationService';
-import { onNotificationNew, offNotificationNew } from '../../../services/user/socketService';
+import { 
+  getNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead, 
+  deleteNotification 
+} from '../../../services/user/notificationService';
+import { 
+  onNotificationNew, 
+  offNotificationNew 
+} from '../../../services/user/socketService';
 import userLayout from '../../../layouts/userLayout';
 import './Notifications.css';
 
@@ -29,7 +37,9 @@ const NotificationsPage = () => {
       }
       
       const result = await getNotifications(params);
-      const newNotifications = result.data?.notifications || [];
+      
+      // Hợp nhất logic lấy dữ liệu từ result.data và result trực tiếp (giữ logic an toàn của cả 2 bên)
+      const newNotifications = result?.data?.notifications || result?.notifications || []; 
       
       if (append) {
         setNotifications(prev => [...prev, ...newNotifications]);
@@ -37,15 +47,24 @@ const NotificationsPage = () => {
         setNotifications(newNotifications);
       }
       
-      setHasMore(result.data?.pagination?.hasNextPage || false);
+      // Hợp nhất logic kiểm tra hasNextPage (giữ logic an toàn của cả 2 bên)
+      setHasMore(
+        result?.data?.pagination?.hasNextPage ||
+        result?.pagination?.hasNextPage ||
+        false
+      );
     } catch (error) {
       console.error('Lỗi khi lấy danh sách thông báo:', error);
+      if (!append) {
+        setNotifications([]);
+      }
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Load more
+  // Load thêm
   const loadMore = () => {
     if (!loading && hasMore) {
       const nextPage = page + 1;
@@ -55,7 +74,7 @@ const NotificationsPage = () => {
     }
   };
 
-  // Đánh dấu thông báo là đã đọc
+  // Đánh dấu đã đọc
   const handleMarkAsRead = async (notificationId) => {
     try {
       await markNotificationAsRead(notificationId);
@@ -67,7 +86,7 @@ const NotificationsPage = () => {
     }
   };
 
-  // Đánh dấu tất cả là đã đọc
+  // Đánh dấu tất cả đã đọc
   const handleMarkAllAsRead = async () => {
     try {
       await markAllNotificationsAsRead();
@@ -87,7 +106,7 @@ const NotificationsPage = () => {
     }
   };
 
-  // Xử lý click vào thông báo
+  // Xử lý click
   const handleNotificationClick = (notification) => {
     if (!notification.isRead) {
       handleMarkAsRead(notification._id);
@@ -98,7 +117,7 @@ const NotificationsPage = () => {
     }
   };
 
-  // Format thời gian
+  // Định dạng thời gian
   const formatTime = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -124,7 +143,7 @@ const NotificationsPage = () => {
     });
   };
 
-  // Lấy icon theo loại thông báo
+  // Icon theo loại thông báo (Đã hợp nhất các loại mới)
   const getNotificationIcon = (type) => {
     switch (type) {
       case 'like_post':
@@ -133,12 +152,20 @@ const NotificationsPage = () => {
         return '💬';
       case 'follow':
         return '👤';
+      case 'lick_pending_review': // Loại mới từ 1c14444
+        return '🎸';
+      case 'lick_approved': // Loại mới từ 1c14444
+        return '✅';
+      case 'lick_rejected': // Loại mới từ 1c14444
+        return '❌';
+      case 'post_reported': // Loại mới từ 1c14444
+        return '🚩';
       default:
         return '🔔';
     }
   };
 
-  // Lắng nghe thông báo mới từ socket
+  // Lắng nghe socket
   useEffect(() => {
     const handleNewNotification = (notification) => {
       console.log('[Notification] Nhận thông báo mới:', notification);
@@ -152,7 +179,7 @@ const NotificationsPage = () => {
     };
   }, []);
 
-  // Load dữ liệu khi tab thay đổi
+  // Reload khi chuyển tab
   useEffect(() => {
     setPage(1);
     const isRead = activeTab === 'unread' ? false : activeTab === 'read' ? true : null;
@@ -185,8 +212,20 @@ const NotificationsPage = () => {
 
         <Tabs
           activeKey={activeTab}
-          onChange={setActiveTab}
+          onChange={(key) => {
+            // Ngăn chặn navigation không mong muốn - chỉ cho phép các tab hợp lệ
+            if (key === 'all' || key === 'unread' || key === 'read') {
+              setActiveTab(key);
+            }
+          }}
           className="notifications-tabs"
+          onTabClick={(key, e) => {
+            // Ngăn chặn navigation khi click vào tab
+            if (e) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
         >
           <TabPane
             tab={
@@ -323,6 +362,3 @@ const NotificationsPage = () => {
 };
 
 export default userLayout(NotificationsPage);
-
-
-
