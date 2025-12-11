@@ -5,7 +5,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
 } from "@ant-design/icons";
-import { CLOUDINARY_CONFIG, UPLOAD_PRESETS } from "../config/cloudinary";
+import { CLOUDINARY_CONFIG, UPLOAD_PRESETS } from "../utils/cloudinaryConfig";
 import { uploadAudio } from "../services/cloudinaryService";
 import SimpleUploadTest from "./SimpleUploadTest";
 import CloudinarySetupGuide from "./CloudinarySetupGuide";

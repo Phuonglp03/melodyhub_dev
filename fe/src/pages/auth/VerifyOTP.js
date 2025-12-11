@@ -7,12 +7,6 @@ import './VerifyOTP.css';
 
 const { Title, Text } = Typography;
 
-message.config({
-  top: 100,
-  duration: 3,
-  maxCount: 3,
-});
-
 const VerifyOTP = () => {
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
@@ -22,6 +16,15 @@ const VerifyOTP = () => {
   const [form] = Form.useForm();
   const [email, setEmail] = useState('');
   const [messageApi, contextHolder] = message.useMessage();
+
+  // Configure message in useEffect to avoid React 18 concurrent mode warning
+  useEffect(() => {
+    message.config({
+      top: 100,
+      duration: 3,
+      maxCount: 3,
+    });
+  }, []);
 
   useEffect(() => {
     // Check if email is provided in state

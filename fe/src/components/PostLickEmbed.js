@@ -179,7 +179,7 @@ const PostLickEmbed = ({ lickId, url }) => {
 
   return (
     <Card
-      bordered={false}
+      variant="borderless"
       onClick={handleNavigate}
       style={{
         background: "#111",
@@ -187,7 +187,7 @@ const PostLickEmbed = ({ lickId, url }) => {
         border: "1px solid #1f1f1f",
         cursor: "pointer",
       }}
-      bodyStyle={{ padding: 16 }}
+      styles={{ body: { padding: 16 } }}
     >
       {/* Hidden audio element */}
       <audio

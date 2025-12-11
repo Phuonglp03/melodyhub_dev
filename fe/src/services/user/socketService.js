@@ -3,7 +3,6 @@ import { store } from "../../redux/store";
 // URL của server (cổng Express/Socket.IO)
 const SOCKET_URL =
   process.env.REACT_APP_SOCKET_URL || "";
-console.log("[Socket.IO] SOCKET_URL resolved to:", SOCKET_URL);
 
 let socket;
 let currentSocketUserId = null; // Track which user the socket belongs to
@@ -13,7 +12,6 @@ export const initSocket = (explicitUserId) => {
   
   // If socket already exists and connected with same userId, reuse it
   if (socket && socket.connected && currentSocketUserId === userId) {
-    console.log("[Socket.IO] Reusing existing connection for user", userId);
     return socket;
   }
   
@@ -21,19 +19,16 @@ export const initSocket = (explicitUserId) => {
   if (socket) {
     // Only disconnect if switching users or socket is in bad state
     if (currentSocketUserId !== userId || !socket.connected) {
-      console.log("[Socket.IO] Cleaning up previous socket");
       socket.disconnect();
       socket = null;
       currentSocketUserId = null;
     } else {
       // Socket exists, same user, just not connected yet - let it continue connecting
-      console.log("[Socket.IO] Socket still connecting for user", userId);
       return socket;
     }
   }
   
   if (userId) {
-    console.log("[Socket.IO] Attempting connection to:", SOCKET_URL);
     currentSocketUserId = userId;
     socket = io(SOCKET_URL, {
       query: { userId: userId },
@@ -41,7 +36,6 @@ export const initSocket = (explicitUserId) => {
     });
 
     socket.on("connect", () => {
-      console.log("[Socket.IO] Đã kết nối:", socket.id, "as user", userId);
       // Re-setup any pending listeners when socket connects
       if (socket._pendingPostArchivedCallbacks) {
         socket._pendingPostArchivedCallbacks.forEach((cb) => {
@@ -55,13 +49,7 @@ export const initSocket = (explicitUserId) => {
       console.error("[Socket.IO] connect_error", err?.message);
     });
 
-    socket.on("disconnect", (reason) => {
-      console.log("[Socket.IO] Đã ngắt kết nối:", reason);
-    });
-  } else {
-    console.warn(
-      "[Socket.IO] Người dùng chưa đăng nhập, không kết nối socket."
-    );
+    socket.on("disconnect", () => {});
   }
   
   return socket;
@@ -99,10 +87,6 @@ const safeOn = (event, callback) => {
   const s = getSocket();
   if (s) {
     s.on(event, callback);
-  } else {
-    console.warn(
-      `[Socket.IO] Bỏ qua lắng nghe '${event}' vì socket chưa sẵn sàng.`
-    );
   }
 };
 
@@ -151,11 +135,9 @@ export const onChatUnbanned = (callback) => {
 // ---- Admin Livestream Realtime Events ----
 // Khi có livestream mới bắt đầu (global event)
 export const onStreamStarted = (callback) => {
-  console.log("[Socket] listen stream-started");
   const socket = getSocket();
   if (socket) {
     const wrappedCallback = (payload) => {
-      console.log("[Socket] Received stream-started event:", payload);
       callback(payload);
     };
     socket.on("stream-started", wrappedCallback);
@@ -166,7 +148,6 @@ export const onStreamStarted = (callback) => {
   }
 };
 export const offStreamStarted = (callback) => {
-  console.log("[Socket] off stream-started");
   const socket = getSocket();
   if (socket && socket._streamStartedCallbacks) {
     const found = socket._streamStartedCallbacks.find(cb => cb.original === callback);
@@ -183,11 +164,9 @@ export const offStreamStarted = (callback) => {
 
 // Khi livestream kết thúc (global event)
 export const onGlobalStreamEnded = (callback) => {
-  console.log("[Socket] listen stream-ended (global)");
   const socket = getSocket();
   if (socket) {
     const wrappedCallback = (payload) => {
-      console.log("[Socket] Received stream-ended (global) event:", payload);
       callback(payload);
     };
     socket.on("stream-ended", wrappedCallback);
@@ -198,7 +177,6 @@ export const onGlobalStreamEnded = (callback) => {
   }
 };
 export const offGlobalStreamEnded = (callback) => {
-  console.log("[Socket] off stream-ended (global)");
   const socket = getSocket();
   if (socket && socket._globalStreamEndedCallbacks) {
     const found = socket._globalStreamEndedCallbacks.find(cb => cb.original === callback);
@@ -215,11 +193,9 @@ export const offGlobalStreamEnded = (callback) => {
 
 // Khi có báo cáo livestream mới (cho admin)
 export const onNewLivestreamReport = (callback) => {
-  console.log("[Socket] listen new:livestream-report");
   const socket = getSocket();
   if (socket) {
     const wrappedCallback = (payload) => {
-      console.log("[Socket] Received new:livestream-report event:", payload);
       callback(payload);
     };
     socket.on("new:livestream-report", wrappedCallback);
@@ -230,7 +206,6 @@ export const onNewLivestreamReport = (callback) => {
   }
 };
 export const offNewLivestreamReport = (callback) => {
-  console.log("[Socket] off new:livestream-report");
   const socket = getSocket();
   if (socket && socket._newLivestreamReportCallbacks) {
     const found = socket._newLivestreamReportCallbacks.find(cb => cb.original === callback);
@@ -257,12 +232,7 @@ export const offPostCommentNew = (callback) => {
 export const onPostArchived = (callback) => {
   const socket = getSocket();
   if (socket) {
-    console.log(
-      "[Socket] Setting up post:archived listener, socket connected:",
-      socket.connected
-    );
     const wrappedCallback = (payload) => {
-      console.log("[Socket] Received post:archived event:", payload);
       callback(payload);
     };
 
@@ -278,15 +248,11 @@ export const onPostArchived = (callback) => {
       wrapped: wrappedCallback,
     });
   } else {
-    console.warn(
-      "[Socket] Cannot setup post:archived listener - socket not available"
-    );
   }
 };
 export const offPostArchived = (callback) => {
   const socket = getSocket();
   if (socket) {
-    console.log("[Socket] Removing post:archived listener");
     if (socket._postArchivedCallbacks) {
       const found = socket._postArchivedCallbacks.find(
         (cb) => cb.original === callback
@@ -309,12 +275,7 @@ export const offPostArchived = (callback) => {
 export const onPostDeleted = (callback) => {
   const socket = getSocket();
   if (socket) {
-    console.log(
-      "[Socket] Setting up post:deleted listener, socket connected:",
-      socket.connected
-    );
     const wrappedCallback = (payload) => {
-      console.log("[Socket] Received post:deleted event:", payload);
       callback(payload);
     };
 
@@ -330,16 +291,12 @@ export const onPostDeleted = (callback) => {
       wrapped: wrappedCallback,
     });
   } else {
-    console.warn(
-      "[Socket] Cannot setup post:deleted listener - socket not available"
-    );
   }
 };
 
 export const offPostDeleted = (callback) => {
   const socket = getSocket();
   if (socket) {
-    console.log("[Socket] Removing post:deleted listener");
     if (socket._postDeletedCallbacks) {
       const found = socket._postDeletedCallbacks.find(
         (cb) => cb.original === callback
@@ -360,21 +317,17 @@ export const offPostDeleted = (callback) => {
 
 // ---- Notifications realtime ----
 export const onNotificationNew = (callback) => {
-  console.log("[Notification] listen notification:new");
   getSocket()?.on("notification:new", callback);
 };
 export const offNotificationNew = (callback) => {
-  console.log("[Notification] off notification:new");
   getSocket()?.off("notification:new", callback);
 };
 
 // ---- Reports realtime ----
 export const onNewReport = (callback) => {
-  console.log("[Report] listen new:report");
   const socket = getSocket();
   if (socket) {
     const wrappedCallback = (payload) => {
-      console.log("[Report] Received new:report event:", payload);
       callback(payload);
     };
     socket.on("new:report", wrappedCallback);
@@ -386,7 +339,6 @@ export const onNewReport = (callback) => {
   }
 };
 export const offNewReport = (callback) => {
-  console.log("[Report] off new:report");
   const socket = getSocket();
   if (socket && socket._newReportCallbacks) {
     const found = socket._newReportCallbacks.find(cb => cb.original === callback);
@@ -421,57 +373,46 @@ export const offSocketEvents = () => {
 
 // ========== DM helpers ==========
 export const dmJoin = (conversationId) => {
-  console.log("[DM] emit dm:join", conversationId);
   getSocket()?.emit("dm:join", conversationId);
 };
 
 export const dmTyping = (conversationId, typing) => {
-  console.log("[DM] emit dm:typing", { conversationId, typing });
   getSocket()?.emit("dm:typing", { conversationId, typing: !!typing });
 };
 
 export const dmSend = (conversationId, text) => {
-  console.log("[DM] emit dm:send", { conversationId, text });
   getSocket()?.emit("dm:send", { conversationId, text });
 };
 
 export const dmSeen = (conversationId) => {
-  console.log("[DM] emit dm:seen", { conversationId });
   getSocket()?.emit("dm:seen", { conversationId });
 };
 
 export const onDmNew = (callback) => {
-  console.log("[DM] listen dm:new");
   getSocket()?.on("dm:new", callback);
 };
 
 export const onDmTyping = (callback) => {
-  console.log("[DM] listen dm:typing");
   getSocket()?.on("dm:typing", callback);
 };
 
 export const onDmSeen = (callback) => {
-  console.log("[DM] listen dm:seen");
   getSocket()?.on("dm:seen", callback);
 };
 
 export const onDmBadge = (callback) => {
-  console.log("[DM] listen dm:badge");
   getSocket()?.on("dm:badge", callback);
 };
 
 export const onDmConversationUpdated = (callback) => {
-  console.log("[DM] listen dm:conversation:updated");
   getSocket()?.on("dm:conversation:updated", callback);
 };
 
 // DM request status events (accepted / declined)
 export const onDmRequestAccepted = (callback) => {
-  console.log('[DM] listen dm:request:accepted');
   const socket = getSocket();
   if (socket) {
     const wrappedCallback = (payload) => {
-      console.log('[DM] Received dm:request:accepted event:', payload);
       callback(payload);
     };
     socket.on('dm:request:accepted', wrappedCallback);
@@ -483,7 +424,6 @@ export const onDmRequestAccepted = (callback) => {
   }
 };
 export const offDmRequestAccepted = (callback) => {
-  console.log('[DM] off dm:request:accepted');
   const socket = getSocket();
   if (socket && socket._dmRequestAcceptedCallbacks) {
     const found = socket._dmRequestAcceptedCallbacks.find(cb => cb.original === callback);
@@ -499,11 +439,9 @@ export const offDmRequestAccepted = (callback) => {
 };
 
 export const onDmRequestDeclined = (callback) => {
-  console.log('[DM] listen dm:request:declined');
   const socket = getSocket();
   if (socket) {
     const wrappedCallback = (payload) => {
-      console.log('[DM] Received dm:request:declined event:', payload);
       callback(payload);
     };
     socket.on('dm:request:declined', wrappedCallback);
@@ -515,7 +453,6 @@ export const onDmRequestDeclined = (callback) => {
   }
 };
 export const offDmRequestDeclined = (callback) => {
-  console.log('[DM] off dm:request:declined');
   const socket = getSocket();
   if (socket && socket._dmRequestDeclinedCallbacks) {
     const found = socket._dmRequestDeclinedCallbacks.find(cb => cb.original === callback);
@@ -531,26 +468,21 @@ export const offDmRequestDeclined = (callback) => {
 };
 
 export const offDmNew = (callback) => {
-  console.log("[DM] off dm:new");
   getSocket()?.off("dm:new", callback);
 };
 
 export const offDmTyping = (callback) => {
-  console.log("[DM] off dm:typing");
   getSocket()?.off("dm:typing", callback);
 };
 
 export const offDmSeen = (callback) => {
-  console.log("[DM] off dm:seen");
   getSocket()?.off("dm:seen", callback);
 };
 
 export const offDmBadge = (callback) => {
-  console.log("[DM] off dm:badge");
   getSocket()?.off("dm:badge", callback);
 };
 
 export const offDmConversationUpdated = (callback) => {
-  console.log("[DM] off dm:conversation:updated");
   getSocket()?.off("dm:conversation:updated", callback);
 };

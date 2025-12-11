@@ -1,4 +1,4 @@
-import { CLOUDINARY_CONFIG, UPLOAD_PRESETS } from "../config/cloudinary";
+import { CLOUDINARY_CONFIG, UPLOAD_PRESETS } from "../utils/cloudinaryConfig";
 
 // Upload file to Cloudinary
 export const uploadToCloudinary = async (

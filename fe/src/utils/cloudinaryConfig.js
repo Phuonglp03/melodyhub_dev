@@ -53,3 +53,4 @@ export const getCloudinaryUrl = (publicId, options = {}) => {
 export const getCloudinaryAudioUrl = (publicId) => {
   return `https://res.cloudinary.com/${CLOUDINARY_CONFIG.cloud_name}/video/upload/${publicId}`;
 };
+

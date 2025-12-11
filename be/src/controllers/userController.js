@@ -5,7 +5,7 @@ import PostComment from '../models/PostComment.js';
 import UserFollow from '../models/UserFollow.js';
 import cloudinary, { uploadImage } from '../config/cloudinary.js';
 import { notifyUserFollowed } from '../utils/notificationHelper.js';
-import { normalizeAvatarUrl } from '../constants/userConstants.js';
+import { normalizeAvatarUrl } from '../utils/userConstants.js';
 
 // Get current user profile (authenticated user)
 export const getCurrentUserProfile = async (req, res) => {

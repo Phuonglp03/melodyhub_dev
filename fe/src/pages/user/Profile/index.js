@@ -291,7 +291,7 @@ const ProfilePage = () => {
             <Button icon={<ArrowLeftOutlined />} style={{ height: 44 }} block onClick={handleBackToProfile}>
               Trở lại trang cá nhân 
             </Button>
-            <Card style={{ background: '#0f0f10', borderColor: '#1f1f1f', padding: 0 }} bodyStyle={{ padding: 0 }}>
+            <Card style={{ background: '#0f0f10', borderColor: '#1f1f1f', padding: 0 }} styles={{ body: { padding: 0 } }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, background: '#151515', borderRadius: 8 }}>
                 <UserOutlined style={{ fontSize: 20 }} />
                 <div style={{ fontWeight: 600, color: '#e5e7eb' }}>Hồ sơ</div>

@@ -56,14 +56,12 @@ export const login = createAsyncThunk(
       
       return thunkAPI.rejectWithValue(response.message || 'Đăng nhập thất bại');
     } catch (error) {
-      console.log('[authSlice] Login error caught:', error);
       const message =
         (error.response &&
           error.response.data &&
           error.response.data.message) ||
         error.message ||
         error.toString();
-      console.log('[authSlice] Extracted error message:', message);
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -153,10 +151,6 @@ const authSlice = createSlice({
             user: action.payload.user
           };
         }
-        console.log('[authSlice] Tokens updated:', { 
-          tokenPreview: action.payload.token?.substring(0, 20) + '...',
-          hasRefreshToken: !!action.payload.refreshToken 
-        });
       }
     },
   },
@@ -168,10 +162,7 @@ const authSlice = createSlice({
       .addCase(register.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        
-        // Log để debug
-        console.log('[authSlice] Registration payload:', action.payload);
-        
+
         // Check if registration requires verification
         if (action.payload?.requiresVerification) {
           state.requiresVerification = true;
@@ -183,15 +174,9 @@ const authSlice = createSlice({
         // If registration includes auto-login (has token)
         if (action.payload?.data?.token) {
           state.user = action.payload.data;
-          console.log('[authSlice] Registration with auto-login successful:', {
-            hasToken: !!action.payload.data.token,
-            hasRefreshToken: !!action.payload.data.refreshToken,
-            userId: action.payload.data.user?.id
-          });
         } else if (action.payload?.token) {
           // Direct token in payload
           state.user = action.payload;
-          console.log('[authSlice] Registration successful with token');
         }
         
         state.message = action.payload.message || 'Đăng ký thành công';
@@ -224,12 +209,6 @@ const authSlice = createSlice({
         // because login thunk returns response.data (see line 54)
         if (action.payload?.token) {
           state.user = action.payload;
-          console.log('[authSlice] Login successful, user data saved:', {
-            hasToken: !!action.payload.token,
-            hasRefreshToken: !!action.payload.refreshToken,
-            userId: action.payload.user?.id,
-            tokenPreview: action.payload.token?.substring(0, 30) + '...'
-          });
         } else {
           console.error('[authSlice] Login payload missing token:', action.payload);
         }
@@ -254,12 +233,6 @@ const authSlice = createSlice({
         // ✅ action.payload.data contains { token, refreshToken, user }
         if (action.payload?.data) {
           state.user = action.payload.data;
-          console.log('[authSlice] Google login successful, user data saved:', {
-            hasToken: !!action.payload.data.token,
-            hasRefreshToken: !!action.payload.data.refreshToken,
-            userId: action.payload.data.user?.id,
-            tokenPreview: action.payload.data.token?.substring(0, 30) + '...'
-          });
         } else {
           console.error('[authSlice] Google login payload missing data:', action.payload);
         }

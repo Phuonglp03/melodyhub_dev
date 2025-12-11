@@ -13,7 +13,7 @@ import { corsMiddleware } from "./config/cors.js";
 import { connectToDatabase } from "./config/db.js";
 import { socketServer } from "./config/socket.js";
 import { nodeMediaServer } from "./config/media.js";
-import { deleteOldArchivedPosts } from "./services/postArchiveService.js";
+import { deleteOldArchivedPosts } from "./utils/postArchiveService.js";
 // Import all models to ensure they are registered with Mongoose
 import "./models/User.js";
 import "./models/Chord.js";

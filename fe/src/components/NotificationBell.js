@@ -49,10 +49,6 @@ const NotificationBell = () => {
         })
       );
     } catch (e) {
-      console.warn(
-        "[NotificationBell] Không thể dispatch notification:toast",
-        e
-      );
     }
   }, []);
 
@@ -82,10 +78,6 @@ const NotificationBell = () => {
               }
             })
             .catch((err) => {
-              console.warn(
-                "[NotificationBell] Không thể load thông báo mới nhất:",
-                err
-              );
             });
         }
         return serverUnread;
@@ -329,7 +321,6 @@ const NotificationBell = () => {
   // Lắng nghe thông báo mới từ socket
   useEffect(() => {
     const handleNewNotification = (notification) => {
-      console.log("[Notification] Nhận thông báo mới:", notification);
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((prev) => prev + 1);
       // Hiển thị toast ngay khi có notification qua socket

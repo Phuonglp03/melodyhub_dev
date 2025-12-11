@@ -149,13 +149,10 @@ const AppHeader = () => {
   // Lắng nghe event dm:conversation:updated để cập nhật conversation trong cửa sổ chat realtime
   useEffect(() => {
     const handleConversationUpdated = ({ conversationId, conversation }) => {
-      console.log('[Header] Received dm:conversation:updated for conversation', conversationId, 'status:', conversation?.status);
-      console.log('[Header] Full conversation data:', conversation);
       setActiveChatWindows((prev) => {
         const updated = prev.map((window) => {
           const windowConvId = window.conversation?._id || window.conversation?.id;
           if (String(windowConvId) === String(conversationId)) {
-            console.log('[Header] Updating conversation in window:', windowConvId, 'new status:', conversation?.status);
             return { 
               ...window, 
               conversation: { 
@@ -167,7 +164,6 @@ const AppHeader = () => {
           }
           return window;
         });
-        console.log('[Header] Updated chat windows:', updated.map(w => ({ id: w.conversation?._id, status: w.conversation?.status })));
         return updated;
       });
     };
@@ -593,12 +589,14 @@ const AppHeader = () => {
           onOpenChange={setChatPopoverVisible}
           placement="bottomRight"
           overlayStyle={{ paddingTop: 0 }}
-          overlayInnerStyle={{
-            padding: 0,
-            background: '#111827',
-            borderRadius: 12,
-            boxShadow: '0 12px 30px rgba(0,0,0,0.65)',
-            overflow: 'hidden',
+          styles={{
+            body: {
+              padding: 0,
+              background: '#111827',
+              borderRadius: 12,
+              boxShadow: '0 12px 30px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }
           }}
           zIndex={1000}
         >
@@ -622,7 +620,7 @@ const AppHeader = () => {
       </Button>
 
       <Button className="app-header__cta app-header__cta--secondary" onClick={() => handleNavigate('/projects')}>
-      Tạo Bản Nhạc
+      Tạo Project
       </Button>
     </div>
   );
@@ -762,14 +760,18 @@ const AppHeader = () => {
             placeholder="Tìm kiếm người dùng"
             allowClear
             style={{ flex: 1, maxWidth: 600 }}
-            dropdownStyle={{
-              background: '#111213',
-              borderRadius: 8,
-              border: '1px solid #2a2a2a',
-              maxHeight: 400,
-              overflowY: 'auto',
+            popupMatchSelectWidth={true}
+            styles={{
+              popup: {
+                root: {
+                  background: '#111213',
+                  borderRadius: 8,
+                  border: '1px solid #2a2a2a',
+                  maxHeight: 400,
+                  overflowY: 'auto',
+                }
+              }
             }}
-            dropdownMatchSelectWidth={true}
           >
             <Input
               prefix={<SearchOutlined />}

@@ -98,6 +98,8 @@ const ArchivedPosts = () => {
   const [error, setError] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const loaderRef = React.useRef(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [postToDelete, setPostToDelete] = useState(null);
   const [postIdToStats, setPostIdToStats] = useState({});
   const [postIdToComments, setPostIdToComments] = useState({});
   const [postIdToLiked, setPostIdToLiked] = useState({});
@@ -261,26 +263,49 @@ const ArchivedPosts = () => {
   };
 
   const handlePermanentDelete = (postId) => {
-    Modal.confirm({
-      title: "Xác nhận xóa vĩnh viễn",
-      content:
-        "Bạn có chắc chắn muốn xóa vĩnh viễn bài viết này? Hành động này không thể hoàn tác.",
-      okText: "Xóa",
-      cancelText: "Hủy",
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          setDeletingPostId(postId);
-          await permanentlyDeletePost(postId);
-          message.success("Đã xóa vĩnh viễn bài viết");
-          setItems((prev) => prev.filter((p) => p._id !== postId));
-        } catch (e) {
-          message.error(e.message || "Không thể xóa bài viết");
-        } finally {
-          setDeletingPostId(null);
-        }
-      },
-    });
+    console.log("[ArchivedPosts] handlePermanentDelete called with postId:", postId);
+    setPostToDelete(postId);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmPermanentDelete = async () => {
+    if (!postToDelete) return;
+    
+    const postId = postToDelete;
+    console.log("[ArchivedPosts] Modal confirmed, starting delete for postId:", postId);
+    try {
+      setDeletingPostId(postId);
+      setDeleteConfirmOpen(false);
+      console.log("[ArchivedPosts] Calling permanentlyDeletePost API with postId:", postId);
+      const response = await permanentlyDeletePost(postId);
+      console.log("[ArchivedPosts] Delete response:", response);
+      
+      if (response?.success !== false) {
+        console.log("[ArchivedPosts] Delete successful, removing from list");
+        message.success("Đã xóa vĩnh viễn bài viết");
+        setItems((prev) => prev.filter((p) => p._id !== postId));
+      } else {
+        console.warn("[ArchivedPosts] Delete failed:", response?.message);
+        message.error(response?.message || "Không thể xóa bài viết");
+      }
+    } catch (e) {
+      console.error("[ArchivedPosts] Error deleting post:", e);
+      console.error("[ArchivedPosts] Error details:", {
+        message: e?.message,
+        response: e?.response,
+        data: e?.response?.data,
+        status: e?.response?.status,
+      });
+      const errorMessage =
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        e?.message ||
+        "Không thể xóa bài viết";
+      message.error(errorMessage);
+    } finally {
+      setDeletingPostId(null);
+      setPostToDelete(null);
+    }
   };
 
   return (
@@ -551,6 +576,46 @@ const ArchivedPosts = () => {
         })}
 
       <div ref={loaderRef} style={{ height: 1 }} />
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        open={deleteConfirmOpen}
+        title="Xác nhận xóa vĩnh viễn"
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setPostToDelete(null);
+        }}
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <Button
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setPostToDelete(null);
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              danger
+              loading={deletingPostId === postToDelete}
+              onClick={confirmPermanentDelete}
+            >
+              Xóa
+            </Button>
+          </div>
+        }
+        styles={{
+          content: { background: "#0f0f10" },
+          header: {
+            background: "#0f0f10",
+            borderBottom: "1px solid #1f1f1f",
+          },
+        }}
+      >
+        <div style={{ color: "#e5e7eb" }}>
+          Bạn có chắc chắn muốn xóa vĩnh viễn bài viết này? Hành động này không thể hoàn tác.
+        </div>
+      </Modal>
     </div>
   );
 };

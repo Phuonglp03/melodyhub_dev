@@ -7,7 +7,7 @@ import User from '../../models/User.js';
 import mongoose from 'mongoose';
 import { createNotification, notifyAdminsPostReported } from '../../utils/notificationHelper.js';
 import { getSocketIo } from '../../config/socket.js';
-import { getReportLimit } from '../../services/reportSettingService.js';
+import { getReportLimit } from '../../utils/reportSettingService.js';
 
 /**
  * Report a post

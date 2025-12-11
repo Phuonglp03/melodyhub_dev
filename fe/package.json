@@ -23,6 +23,8 @@
     "lucide-react": "^0.546.0",
     "peerjs": "^1.5.5",
     "react": "^19.2.0",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
     "react-player": "^3.3.3",
@@ -31,6 +33,7 @@
     "react-scripts": "5.0.1",
     "redux": "^5.0.1",
     "redux-persist": "^6.0.0",
+    "nanoid": "^5.0.7",
     "socket.io-client": "^4.8.1",
     "styled-components": "^6.1.19",
     "tone": "^15.1.22",
@@ -45,12 +48,21 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
-  "proxy": "https://api.melodyhub.online",
+  "proxy": "https://api.melodyhub.website",
   "eslintConfig": {
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "rules": {
+      "no-unused-vars": "warn",
+      "react-hooks/exhaustive-deps": "warn",
+      "import/no-anonymous-default-export": "warn",
+      "no-useless-escape": "warn",
+      "no-loop-func": "warn",
+      "unicode-bom": "warn",
+      "jsx-a11y/img-redundant-alt": "warn"
+    }
   },
   "browserslist": {
     "production": [

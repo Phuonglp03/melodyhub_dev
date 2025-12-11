@@ -16,6 +16,7 @@ import {
   getUserFollowingList,
   searchUsers
 } from '../controllers/userController.js';
+import { getUserProjectsById } from '../controllers/projectController.js';
 import middlewareController from '../middleware/auth.js';
 const { verifyToken, optionalVerifyToken } = middlewareController;
 
@@ -139,6 +140,9 @@ router.get('/:userId/followers', optionalVerifyToken, getFollowersList);
 
 // GET /api/users/:userId/following - Get list of users that a specific user is following (public)
 router.get('/:userId/following', optionalVerifyToken, getUserFollowingList);
+
+// GET /api/users/:userId/projects - Get active projects for a specific user (public)
+router.get('/:userId/projects', optionalVerifyToken, getUserProjectsById);
 
 // GET /api/users/suggestions/list - Suggested users to follow (requires authentication)
 router.get('/suggestions/list', verifyToken, getFollowSuggestions);

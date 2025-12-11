@@ -3,7 +3,7 @@ import Conversation from '../models/Conversation.js';
 import DirectMessage from '../models/DirectMessage.js';
 import UserFollow from '../models/UserFollow.js';
 import { getSocketIo } from '../config/socket.js';
-import { uploadMessageText, downloadMessageText } from '../services/messageStorageService.js';
+import { uploadMessageText, downloadMessageText } from '../utils/messageStorageService.js';
 
 const isObjectIdEqual = (a, b) => String(a) === String(b);
 
@@ -337,8 +337,11 @@ export const sendMessage = async (req, res) => {
     const peer = getPeerId(convo, me);
     convo.lastMessage = storageResult.textPreview; // Dùng preview cho sidebar
     convo.lastMessageAt = msg.createdAt;
+    // Tăng unreadCount cho peer (người nhận)
     const currentUnread = Number(convo.unreadCounts?.get(String(peer)) || 0);
     convo.unreadCounts.set(String(peer), currentUnread + 1);
+    // Reset unreadCount về 0 cho sender (người gửi) vì họ đã trả lời
+    convo.unreadCounts.set(String(me), 0);
     await convo.save();
 
     const populated = await DirectMessage.findById(msg._id)

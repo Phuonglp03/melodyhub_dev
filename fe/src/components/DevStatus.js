@@ -1,7 +1,7 @@
 import React from "react";
 import { Tag, Tooltip } from "antd";
 import { ApiOutlined, DatabaseOutlined } from "@ant-design/icons";
-import { API_CONFIG } from "../config/api";
+import { API_CONFIG } from "../utils/apiConfig";
 
 const DevStatus = ({ style = {} }) => {
   const isUsingMock = API_CONFIG.USE_MOCK_DATA;

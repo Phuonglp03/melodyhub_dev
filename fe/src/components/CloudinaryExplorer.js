@@ -15,7 +15,7 @@ import {
   DeleteOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { CLOUDINARY_CONFIG } from "../config/cloudinary";
+import { CLOUDINARY_CONFIG } from "../utils/cloudinaryConfig";
 
 const { Title, Text } = Typography;
 

@@ -88,7 +88,7 @@ const LickDetailPage = () => {
       {/* Back Button */}
       <Button
         icon={<ArrowLeftOutlined />}
-        onClick={() => navigate("/licks")}
+        onClick={() => navigate(-1)}
         style={{ marginBottom: "20px" }}
       >
         Quay lại

@@ -1031,10 +1031,15 @@ export const permanentlyDeletePost = async (req, res) => {
       });
     }
 
+    // Convert postId to ObjectId for consistency
+    const postObjectId = mongoose.Types.ObjectId.isValid(postId) 
+      ? new mongoose.Types.ObjectId(postId) 
+      : postId;
+
     // Delete related data
     await Promise.all([
-      PostLike.deleteMany({ postId }),
-      PostComment.deleteMany({ postId }),
+      PostLike.deleteMany({ postId: postObjectId }),
+      PostComment.deleteMany({ postId: postObjectId }),
     ]);
 
     // Delete the post

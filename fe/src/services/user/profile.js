@@ -29,26 +29,12 @@ export const uploadMyAvatar = async (file) => {
   const form = new FormData();
   form.append('avatar', fileToUpload); // QUAN TRỌNG: field name phải là 'avatar'
   
-  // Debug: Log tất cả fields trong FormData để verify
-  console.log('[Upload Avatar] FormData entries:');
-  for (const [key, value] of form.entries()) {
-    console.log(`  - ${key}:`, value instanceof File ? `File(${value.name}, ${value.size} bytes)` : value);
-  }
-  
   // Verify field name
   if (!form.has('avatar')) {
     throw new Error('FormData must have field "avatar" (not "avatarUrl")');
   }
-  
-  console.log('[Upload Avatar] Sending file only:', {
-    name: fileToUpload.name,
-    size: fileToUpload.size,
-    type: fileToUpload.type
-  });
-  
+
   const res = await api.post('/users/profile/avatar', form);
-  
-  console.log('[Upload Avatar] Response:', res.data);
   return res.data;
 };
 
@@ -64,26 +50,12 @@ export const uploadMyCoverPhoto = async (file) => {
   const form = new FormData();
   form.append('coverPhoto', fileToUpload); // QUAN TRỌNG: field name phải là 'coverPhoto'
   
-  // Debug: Log tất cả fields trong FormData để verify
-  console.log('[Upload Cover Photo] FormData entries:');
-  for (const [key, value] of form.entries()) {
-    console.log(`  - ${key}:`, value instanceof File ? `File(${value.name}, ${value.size} bytes)` : value);
-  }
-  
   // Verify field name
   if (!form.has('coverPhoto')) {
     throw new Error('FormData must have field "coverPhoto"');
   }
-  
-  console.log('[Upload Cover Photo] Sending file only:', {
-    name: fileToUpload.name,
-    size: fileToUpload.size,
-    type: fileToUpload.type
-  });
-  
+
   const res = await api.post('/users/profile/cover-photo', form);
-  
-  console.log('[Upload Cover Photo] Response:', res.data);
   return res.data;
 };
 

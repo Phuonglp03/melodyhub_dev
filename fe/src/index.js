@@ -3,6 +3,14 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
 
+// Silence non-error console outputs (keep console.error)
+/* eslint-disable no-console */
+console.log = () => {};
+console.info = () => {};
+console.debug = () => {};
+console.warn = () => {};
+/* eslint-enable no-console */
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
 

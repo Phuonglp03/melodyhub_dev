@@ -105,11 +105,11 @@ const LickDetail = ({
     setIsEditingTab(false);
   }, [lick?.lick_id, lick?.tab_notation, lick?.tabNotation]);
 
-  const displayAvatar = lick.creator?.avatar_url || myProfile?.avatarUrl;
+  const displayAvatar = lick.creator?.avatar_url;
   const displayName =
     lick.creator?.display_name ||
-    lick.creator?.username ||
     lick.creator?.displayName ||
+    lick.creator?.username ||
     "Unknown User";
 
   const resolvedCurrentUserId =
@@ -242,7 +242,7 @@ const LickDetail = ({
             marginBottom: "20px",
             boxShadow: "0 12px 32px rgba(15, 23, 42, 0.25)",
           }}
-          bodyStyle={{ padding: "20px" }}
+          styles={{ body: { padding: "20px" } }}
         >
           {/* Audio Player */}
           {showPlayer && (
@@ -352,25 +352,7 @@ const LickDetail = ({
               >
                 {commentsCount} comments
               </Button>
-              <Button
-                type="text"
-                icon={<ShareAltOutlined />}
-                onClick={handleShare}
-                loading={sharing}
-                disabled={!isPublic || sharing}
-                style={{
-                  color: "#cbd5f5",
-                  backgroundColor: "rgba(15, 23, 42, 0.35)",
-                  borderRadius: "999px",
-                  padding: "4px 14px",
-                  border: "1px solid rgba(148, 163, 184, 0.25)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                Share
-              </Button>
+
             </div>
 
             {/* Tags */}
@@ -600,13 +582,15 @@ const LickDetail = ({
               borderRadius: "16px",
               boxShadow: "0 12px 32px rgba(15, 23, 42, 0.2)",
             }}
-            headStyle={{
-              color: "#e2e8f0",
-              borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
-              background: "rgba(15, 23, 42, 0.55)",
-              padding: "14px 20px",
+            styles={{
+              header: {
+                color: "#e2e8f0",
+                borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
+                background: "rgba(15, 23, 42, 0.55)",
+                padding: "14px 20px",
+              },
+              body: { padding: "20px" }
             }}
-            bodyStyle={{ padding: "20px" }}
           >
             <div style={{ color: "white" }}>
               {canEditTab ? (

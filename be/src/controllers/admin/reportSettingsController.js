@@ -1,4 +1,4 @@
-import { getReportLimit, upsertReportLimit } from '../../services/reportSettingService.js';
+import { getReportLimit, upsertReportLimit } from '../../utils/reportSettingService.js';
 
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 20;

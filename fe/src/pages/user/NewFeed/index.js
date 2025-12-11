@@ -3020,12 +3020,8 @@ const NewsFeed = () => {
                       borderRadius: 8,
                     }}
                     options={availableLicks}
-                    dropdownMatchSelectWidth={false}
-                    dropdownStyle={{
-                      minWidth: 360,
-                      maxWidth: 520,
-                      whiteSpace: "normal",
-                    }}
+                    popupMatchSelectWidth={false}
+                    styles={{ popup: { root: { minWidth: 360, maxWidth: 520, whiteSpace: "normal" } } }}
                     optionLabelProp="label"
                     notFoundContent={
                       loadingLicks ? (
@@ -3108,12 +3104,8 @@ const NewsFeed = () => {
                       borderRadius: 8,
                     }}
                     options={availableProjects}
-                    dropdownMatchSelectWidth={false}
-                    dropdownStyle={{
-                      minWidth: 360,
-                      maxWidth: 520,
-                      whiteSpace: "normal",
-                    }}
+                    popupMatchSelectWidth={false}
+                    styles={{ popup: { root: { minWidth: 360, maxWidth: 520, whiteSpace: "normal" } } }}
                     optionLabelProp="label"
                     notFoundContent={
                       loadingProjects ? (
@@ -3901,7 +3893,7 @@ const NewsFeed = () => {
         width={360}
         className="newsfeed-sidebar-drawer"
         destroyOnClose
-        bodyStyle={{ padding: 0, background: "#0a0a0a" }}
+        styles={{ body: { padding: 0, background: "#0a0a0a" } }}
       >
         <div className="newsfeed-sidebar-drawer-content hide-scrollbar">
           {sidebarContent}
@@ -4916,12 +4908,8 @@ const NewsFeed = () => {
                         borderRadius: 8,
                       }}
                       options={availableProjects}
-                    dropdownMatchSelectWidth={false}
-                    dropdownStyle={{
-                      minWidth: 360,
-                      maxWidth: 520,
-                      whiteSpace: "normal",
-                    }}
+                    popupMatchSelectWidth={false}
+                    styles={{ popup: { root: { minWidth: 360, maxWidth: 520, whiteSpace: "normal" } } }}
                     optionLabelProp="label"
                       notFoundContent={
                         loadingProjects ? (

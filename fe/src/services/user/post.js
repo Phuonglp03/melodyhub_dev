@@ -96,8 +96,15 @@ export const listArchivedPosts = async ({ page = 1, limit = 10 } = {}) => {
 };
 
 export const permanentlyDeletePost = async (postId) => {
-  const res = await api.delete(`/posts/${postId}/permanent`);
-  return res.data;
+  console.log("[postService] permanentlyDeletePost called with postId:", postId);
+  try {
+    const res = await api.delete(`/posts/${postId}/permanent`);
+    console.log("[postService] permanentlyDeletePost response:", res);
+    return res.data;
+  } catch (error) {
+    console.error("[postService] permanentlyDeletePost error:", error);
+    throw error;
+  }
 };
 
 // ---- Likes ----

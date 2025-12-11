@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../constants/userConstants.js';
+import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../utils/userConstants.js';
 
 const userSchema = new mongoose.Schema(
   {

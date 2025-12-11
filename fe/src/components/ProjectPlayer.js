@@ -24,19 +24,26 @@ const ProjectPlayer = ({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const animationFrameRef = useRef(null);
   const audioRef = useRef(null);
 
   useEffect(() => {
-    if (audioUrl && audioRef.current) {
+    if (!audioUrl) return;
+    
+    if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.load();
+      setIsPlaying(false);
+      setCurrentTime(0);
       audioRef.current.src = audioUrl + `?t=${Date.now()}`; // Cache bust
+      audioRef.current.load();
     }
-    setDuration(audioDuration || 0);
-    setIsPlaying(false);
-    setCurrentTime(0);
-  }, [audioUrl, audioDuration]);
+  }, [audioUrl]);
+
+  // Separate effect for audioDuration to avoid conflicts
+  useEffect(() => {
+    if (audioDuration !== undefined && audioDuration > 0) {
+      setDuration(audioDuration);
+    }
+  }, [audioDuration]);
 
   const handlePlayPause = () => {
     if (!audioRef.current) return;
@@ -66,34 +73,14 @@ const ProjectPlayer = ({
     }
   };
 
-  const animateProgress = () => {
-    if (!audioRef.current) return;
-    const time = audioRef.current.currentTime;
-    setCurrentTime(time);
-    animationFrameRef.current = requestAnimationFrame(animateProgress);
-  };
-
   useEffect(() => {
-    if (isPlaying) {
-      animationFrameRef.current = requestAnimationFrame(animateProgress);
-      return () => {
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-          animationFrameRef.current = null;
-        }
-      };
-    }
-
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-  }, [isPlaying]);
-
-  useEffect(() => () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
+    // Cleanup on unmount
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   const handleSeek = (value) => {
@@ -242,11 +229,22 @@ const ProjectPlayer = ({
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={() => setDuration(audioRef.current.duration)}
-        onEnded={() => setIsPlaying(false)}
+        onLoadedMetadata={() => {
+          if (audioRef.current && audioRef.current.duration) {
+            const newDuration = audioRef.current.duration;
+            if (newDuration !== duration) {
+              setDuration(newDuration);
+            }
+          }
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        }}
         onError={(e) => {
           console.error("Audio error:", e);
           setIsLoading(false);
+          setIsPlaying(false);
         }}
         preload="metadata"
       />

@@ -99,19 +99,16 @@ const LiveRoomManagement = () => {
       setSocketConnected(socket.connected);
       
       socket.on('connect', () => {
-        console.log('[Admin LiveRoom] Socket connected');
         setSocketConnected(true);
       });
       
       socket.on('disconnect', () => {
-        console.log('[Admin LiveRoom] Socket disconnected');
         setSocketConnected(false);
       });
     }
 
     // Handler when new livestream starts
     const handleStreamStarted = (newRoom) => {
-      console.log('[Admin LiveRoom] New stream started:', newRoom);
       setActiveLivestreams(prev => {
         // Check if already exists
         const exists = prev.some(r => r._id === newRoom._id);
@@ -126,7 +123,6 @@ const LiveRoomManagement = () => {
 
     // Handler when livestream ends
     const handleStreamEnded = (data) => {
-      console.log('[Admin LiveRoom] Stream ended:', data);
       const { roomId } = data;
       // Remove from active livestreams
       setActiveLivestreams(prev => prev.filter(r => r._id !== roomId));
@@ -134,7 +130,6 @@ const LiveRoomManagement = () => {
 
     // Handler when new livestream report is created
     const handleNewLivestreamReport = (data) => {
-      console.log('[Admin LiveRoom] New livestream report:', data);
       const { report } = data;
       
       // Add to reports list if not already exists
@@ -378,16 +373,15 @@ const LiveRoomManagement = () => {
         // Auto reconnect on error
         player.on('error', () => {
           const err = player.error();
-          console.warn('VideoJS Error:', err);
+          console.error('VideoJS Error:', err);
           if (err && (err.code === 2 || err.code === 3 || err.code === 4)) {
-            console.log('Đang thử khôi phục stream...');
             setTimeout(() => {
               if (player && !player.isDisposed()) {
                 player.src({
                   src: playbackUrl,
                   type: 'application/x-mpegURL'
                 });
-                player.play().catch(e => console.log('Auto-play prevented'));
+                player.play().catch(() => {});
               }
             }, 1500);
           }

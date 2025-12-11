@@ -40,7 +40,7 @@ const ChangePasswordPage = () => {
           </Button>
           <Card
             style={{ background: '#0f0f10', borderColor: '#1f1f1f', padding: 0 }}
-            bodyStyle={{ padding: 16 }}
+            styles={{ body: { padding: 16 } }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <KeyOutlined style={{ fontSize: 20, color: '#fbbf24' }} />

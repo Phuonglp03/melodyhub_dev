@@ -6,12 +6,6 @@ import api from '../../services/api';
 import { register as registerUser } from '../../services/authService';
 import './Register.css';
 
-message.config({
-  top: 100,
-  duration: 3,
-  maxCount: 3,
-});
-
 const Register = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -23,6 +17,15 @@ const Register = () => {
   const [wards, setWards] = useState([]);
   const [selectedProvince, setSelectedProvince] = useState(null);
   const [selectedDistrict, setSelectedDistrict] = useState(null);
+
+  // Configure message in useEffect to avoid React 18 concurrent mode warning
+  useEffect(() => {
+    message.config({
+      top: 100,
+      duration: 3,
+      maxCount: 3,
+    });
+  }, []);
 
   useEffect(() => {
     const fetchProvinces = async () => {

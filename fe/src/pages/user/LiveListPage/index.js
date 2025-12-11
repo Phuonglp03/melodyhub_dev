@@ -14,7 +14,7 @@ import {
   GlobalOutlined,
   LockOutlined
 } from '@ant-design/icons';
-import { normalizeAvatarUrl } from '../../../constants/user';
+import { normalizeAvatarUrl } from '../../../utils/userConstants';
 
 const LiveListPage = () => {
   const [streams, setStreams] = useState([]);

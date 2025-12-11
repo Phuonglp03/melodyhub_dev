@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import User from '../models/User.js';
 import { generateTokens } from './authController.js';
-import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../constants/userConstants.js';
+import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../utils/userConstants.js';
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 

@@ -93,13 +93,12 @@ const LickPlayer = ({
   }, []);
 
   const displayName =
-    myProfile?.displayName ||
-    myProfile?.username ||
-    lick?.creator?.username ||
     lick?.creator?.display_name ||
+    lick?.creator?.displayName ||
+    lick?.creator?.username ||
     "Unknown User";
 
-  const displayAvatar = myProfile?.avatarUrl || lick?.creator?.avatar_url;
+  const displayAvatar = lick?.creator?.avatar_url;
 
   const handlePlayPause = () => {
     if (!audioRef.current) return;

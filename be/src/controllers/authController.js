@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import sendMail from './sendMail.js';
 import { validationResult } from 'express-validator';
 import crypto from 'crypto';
-import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../constants/userConstants.js';
+import { DEFAULT_AVATAR_URL, normalizeAvatarUrl } from '../utils/userConstants.js';
 import { createAccessToken, createRefreshToken } from '../utils/jwt.js';
 
 // Generate access and refresh tokens

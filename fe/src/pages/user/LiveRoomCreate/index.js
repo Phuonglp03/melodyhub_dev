@@ -512,9 +512,9 @@ const LiveStreamCreate = () => {
         {/* LEFT: PREVIEW */}
         <div style={{ flex: 2, minWidth: '300px' }}>
           <Card 
-            bordered={false} 
+            variant="borderless" 
             style={{ background: '#1f1f1f', borderRadius: '8px' }}
-            bodyStyle={{ padding: 0 }}
+            styles={{ body: { padding: 0 } }}
           >
             <div style={{ position: 'relative', paddingTop: '56.25%', background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
               {/* Video Container - LUÔN MOUNT, chỉ show/hide bằng CSS */}
@@ -580,7 +580,7 @@ const LiveStreamCreate = () => {
 
         {/* RIGHT: SETTINGS */}
         <div style={{ flex: 1, minWidth: '300px' }}>
-          <Card title={<span style={{color:'white'}}>Cài đặt Stream</span>} bordered={false} style={{ background: '#1f1f1f', color: '#fff' }} headStyle={{borderBottom:'1px solid #303030'}}>
+          <Card title={<span style={{color:'white'}}>Cài đặt Stream</span>} variant="borderless" style={{ background: '#1f1f1f', color: '#fff' }} styles={{ header: { borderBottom: '1px solid #303030' } }}>
             
             <Alert 
               message="Bảo mật" 

@@ -1,5 +1,5 @@
 import Chord from "../models/Chord.js";
-import DEFAULT_CHORDS from "../data/defaultChords.js";
+import DEFAULT_CHORDS from "../utils/defaultChords.js";
 
 // Helper function to check if chord is basic (no extensions)
 const isBasicChord = (chordName) => {

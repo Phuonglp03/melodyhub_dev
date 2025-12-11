@@ -9,19 +9,19 @@ import User from "../models/User.js";
 import {
   uploadMessageText,
   downloadMessageText,
-} from "../services/messageStorageService.js";
+} from "../utils/messageStorageService.js";
 import {
   applyOperation,
   getCollabState,
   getMissingOps,
-} from "../services/collabStateService.js";
+} from "../utils/collabStateService.js";
 import {
   addCollaboratorPresence,
   removeCollaboratorPresence,
   listCollaborators,
   updateCursorPosition,
   heartbeatPresence,
-} from "../services/collabPresenceService.js";
+} from "../utils/collabPresenceService.js";
 import { createClient } from "redis";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { recordCollabMetric } from "../utils/collabMetrics.js";
@@ -277,10 +277,13 @@ export const socketServer = (httpServer) => {
         );
         convo.lastMessage = storageResult.textPreview;
         convo.lastMessageAt = msg.createdAt;
+        // Tăng unreadCount cho peer (người nhận)
         const currentUnread = Number(
           convo.unreadCounts?.get(String(peer)) || 0
         );
         convo.unreadCounts.set(String(peer), currentUnread + 1);
+        // Reset unreadCount về 0 cho sender (người gửi) vì họ đã trả lời
+        convo.unreadCounts.set(String(tempUserId), 0);
         await convo.save();
 
         console.log(

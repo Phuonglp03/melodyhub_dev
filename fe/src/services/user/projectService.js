@@ -28,6 +28,17 @@ export const getUserProjects = async (filter = "all", status = null) => {
   }
 };
 
+// Get active projects for a specific user (for viewing other users' profiles)
+export const getUserProjectsById = async (userId) => {
+  try {
+    const res = await api.get(`/users/${userId}/projects`);
+    return res.data;
+  } catch (error) {
+    console.error("Error fetching user projects by ID:", error);
+    throw error;
+  }
+};
+
 // Get project by ID with full details
 export const getProjectById = async (projectId) => {
   try {

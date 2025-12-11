@@ -1,5 +1,5 @@
 import { getRedisClient } from "../config/redisClient.js";
-import { recordCollabMetric } from "../utils/collabMetrics.js";
+import { recordCollabMetric } from "./collabMetrics.js";
 
 const COLLAB_KEY = (projectId) => `collab:project:${projectId}`;
 const OPS_KEY = (projectId) => `collab:project:${projectId}:ops`;
@@ -307,3 +307,4 @@ export const clearCollabState = async (projectId) => {
     console.error("[CollabState] clearCollabState error:", err.message);
   }
 };
+

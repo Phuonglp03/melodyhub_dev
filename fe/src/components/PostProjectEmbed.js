@@ -77,14 +77,14 @@ const PostProjectEmbed = ({ projectId }) => {
 
   return (
     <Card
-      bordered={false}
+      variant="borderless"
       style={{
         background: "#111",
         borderRadius: 12,
         border: "1px solid #1f1f1f",
         cursor: "default",
       }}
-      bodyStyle={{ padding: 16 }}
+      styles={{ body: { padding: 16 } }}
     >
       {loading && (
         <div style={{ display: "flex", justifyContent: "center", padding: 24 }}>

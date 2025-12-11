@@ -1,5 +1,5 @@
 import User from '../../models/User.js';
-import { normalizeAvatarUrl } from '../../constants/userConstants.js';
+import { normalizeAvatarUrl } from '../../utils/userConstants.js';
 
 // Get current admin profile
 export const getAdminProfile = async (req, res) => {

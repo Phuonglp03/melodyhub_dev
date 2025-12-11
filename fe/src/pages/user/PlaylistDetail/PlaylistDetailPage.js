@@ -49,7 +49,7 @@ const PlaylistDetailPage = () => {
 
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", description: "" });
+  const [editForm, setEditForm] = useState({ name: "", description: "", isPublic: true });
   const [saving, setSaving] = useState(false);
 
   // Toast notification state
@@ -370,6 +370,7 @@ const PlaylistDetailPage = () => {
       setEditForm({
         name: playlist.name || "",
         description: playlist.description || "",
+        isPublic: playlist.is_public !== undefined ? playlist.is_public : true,
       });
       setIsEditing(true);
     }
@@ -377,7 +378,7 @@ const PlaylistDetailPage = () => {
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    setEditForm({ name: "", description: "" });
+    setEditForm({ name: "", description: "", isPublic: true });
   };
 
   const handleSaveEdit = async () => {
@@ -388,7 +389,7 @@ const PlaylistDetailPage = () => {
       const result = await updatePlaylist(playlistId, {
         name: editForm.name.trim(),
         description: editForm.description.trim(),
-        isPublic: playlist.is_public,
+        isPublic: editForm.isPublic,
         coverImageUrl: playlist.cover_image_url,
       });
 
@@ -520,7 +521,83 @@ const PlaylistDetailPage = () => {
                   placeholder="Add a description..."
                   maxLength={250}
                 />
-                <div className="flex items-center justify-end gap-2 mt-2">
+                
+                {/* Privacy Toggle */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-3">
+                    Privacy
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative">
+                        <input
+                          type="radio"
+                          name="isPublic"
+                          checked={editForm.isPublic === true}
+                          onChange={() =>
+                            setEditForm((prev) => ({ ...prev, isPublic: true }))
+                          }
+                          className="sr-only"
+                        />
+                        <div
+                          className={`w-12 h-6 rounded-full transition-colors ${
+                            editForm.isPublic ? "bg-orange-500" : "bg-gray-700"
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
+                              editForm.isPublic
+                                ? "translate-x-6"
+                                : "translate-x-0.5"
+                            } mt-0.5`}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-300">
+                        <FaGlobe />
+                        <span>Public</span>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative">
+                        <input
+                          type="radio"
+                          name="isPublic"
+                          checked={editForm.isPublic === false}
+                          onChange={() =>
+                            setEditForm((prev) => ({ ...prev, isPublic: false }))
+                          }
+                          className="sr-only"
+                        />
+                        <div
+                          className={`w-12 h-6 rounded-full transition-colors ${
+                            !editForm.isPublic ? "bg-orange-500" : "bg-gray-700"
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
+                              !editForm.isPublic
+                                ? "translate-x-6"
+                                : "translate-x-0.5"
+                            } mt-0.5`}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-300">
+                        <FaLock />
+                        <span>Private</span>
+                      </div>
+                    </label>
+                  </div>
+                  {editForm.isPublic && (
+                    <p className="mt-2 text-xs text-yellow-400 flex items-center gap-1">
+                      <span>⚠</span>
+                      Public playlists can only contain public licks
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 mt-4">
                   <span className="text-xs text-gray-500">
                     {editForm.description.length}/250
                   </span>

@@ -1,4 +1,4 @@
-import { CLOUDINARY_CONFIG } from "../config/cloudinary";
+import { CLOUDINARY_CONFIG } from "../utils/cloudinaryConfig";
 
 // Get Cloudinary resources
 export const getCloudinaryResources = async (

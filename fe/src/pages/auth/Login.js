@@ -7,14 +7,15 @@ import { login } from '../../redux/authSlice';
 import GoogleSignIn from '../../components/GoogleSignIn';
 import './Login.css';
 
-// Configure message globally
-message.config({
-  top: 100,
-  duration: 3,
-  maxCount: 3,
-});
-
 const Login = () => {
+  // Configure message in useEffect to avoid React 18 concurrent mode warning
+  useEffect(() => {
+    message.config({
+      top: 100,
+      duration: 3,
+      maxCount: 3,
+    });
+  }, []);
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const location = useLocation();

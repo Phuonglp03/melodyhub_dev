@@ -1,5 +1,5 @@
 import Instrument from "../models/Instrument.js";
-import DEFAULT_INSTRUMENTS from "../data/defaultInstruments.js";
+import DEFAULT_INSTRUMENTS from "./defaultInstruments.js";
 
 /**
  * Ensure default instruments are seeded in the database
