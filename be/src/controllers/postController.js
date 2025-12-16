@@ -8,6 +8,7 @@ import UserFollow from '../models/UserFollow.js';
 import Project from '../models/Project.js';
 import ProjectCollaborator from '../models/ProjectCollaborator.js';
 import { uploadToCloudinary } from '../middleware/file.js';
+import { getSocketIo } from '../config/socket.js';
 
 // Helper function to detect media type from mimetype
 const detectMediaType = (mimetype) => {
@@ -1206,6 +1207,20 @@ export const likePost = async (req, res) => {
           console.error('Lỗi khi tạo thông báo like:', err);
         });
       }
+
+      // Emit realtime like update
+      try {
+        const io = getSocketIo();
+        const likesCount = await PostLike.countDocuments({ postId });
+        io.to(`post:${postId}`).emit('post:like:update', {
+          postId,
+          likesCount,
+          userId,
+          liked: true,
+        });
+      } catch (emitErr) {
+        console.warn('[socket] emit post:like:update failed:', emitErr?.message);
+      }
       
       return res.status(201).json({ success: true, liked: true, data: { id: like._id } });
     } catch (err) {
@@ -1234,6 +1249,20 @@ export const unlikePost = async (req, res) => {
     const deleted = await PostLike.findOneAndDelete({ postId, userId });
     if (!deleted) {
       return res.status(200).json({ success: true, liked: false, message: 'Not liked yet' });
+    }
+
+    // Emit realtime unlike update
+    try {
+      const io = getSocketIo();
+      const likesCount = await PostLike.countDocuments({ postId });
+      io.to(`post:${postId}`).emit('post:like:update', {
+        postId,
+        likesCount,
+        userId,
+        liked: false,
+      });
+    } catch (emitErr) {
+      console.warn('[socket] emit post:like:update failed:', emitErr?.message);
     }
     return res.status(200).json({ success: true, liked: false });
   } catch (error) {
